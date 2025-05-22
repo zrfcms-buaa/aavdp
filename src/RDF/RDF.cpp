@@ -24,7 +24,7 @@ void int_to_str(char str[], int num)
     } 
 }
 
-RDF::RDF(char *model_path, double rmax, int nbin, bool is_partial)
+RDF::RDF(char *model_path, double rmax, int nbin, bool is_partial, const char *coord_path)
 {
 	QB_tools QB;
 	QB_init(&QB);
@@ -75,6 +75,9 @@ RDF::RDF(char *model_path, double rmax, int nbin, bool is_partial)
 	}
 	QB_network_free(&QB);
 	QB_pbc_clean(&QB);
+	if(coord_path[0]!='\0'){
+		QB_dump_lmc(&QB, coord_path);
+	}
 	QB_free_atom(&QB);
 	printf("[INFO] Ending computation of radial distribution function\n");
 }
@@ -109,8 +112,10 @@ void RDF::compute(QB_tools *QB, int natom, double rmax, int pairij_id)
 	clock_t start, finish;
     start=clock();
 	int *natombin; callocate(&natombin, numrbin, 0);
+	QB_add_exint(QB, "coordination");
 	for(int i=0;i<natom;i++){
 		QB_list_build(QB, i, rmax);
+		QB->par_exint[QB->num_exint-1][i]=QB->neb.num;
 		double posi[3]={QB->atom[i].x, QB->atom[i].y, QB->atom[i].z};
 		for(int j=0;j<QB->neb.num;j++){
 			int    id=QB->neb.id[j];
@@ -145,6 +150,11 @@ void RDF::compute(QB_tools *QB, int natom, double rmax, int typei, int typej, in
     start=clock();
 	int natomi=0, natomj=0;
 	int *natombin; callocate(&natombin, numrbin, 0);
+	char coordination_name[50];
+	strcpy(coordination_name, "coordination");
+	char stri[5], strj[5]; int_to_str(stri, typei); int_to_str(strj, typej); 
+	strcat(coordination_name, "_"); strcat(coordination_name, stri); strcat(coordination_name, "_"); strcat(coordination_name, strj);
+	QB_add_exint(QB, coordination_name);
 	for(int i=0;i<natom;i++){
 		if(QB->atom[i].type==typei){
 			natomi++;
@@ -153,6 +163,7 @@ void RDF::compute(QB_tools *QB, int natom, double rmax, int typei, int typej, in
 			for(int j=0;j<QB->neb.num;j++){
 				int    id=QB->neb.id[j];
 				if(QB->atom[id].type==typej){
+					QB->par_exint[QB->num_exint-1][i]+=1;
 					double posj[3]={QB->atom[id].x, QB->atom[id].y, QB->atom[id].z};
 					double dist[3];
 					vector_difference(dist, posi, posj);

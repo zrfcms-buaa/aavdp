@@ -25,7 +25,7 @@ public:
     double **gij=nullptr;
     double rbin=0.0;
     double *gmax=nullptr, *gmin=nullptr;
-    RDF(char *model_path, double rmax, int nbin, bool is_partial=false);
+    RDF(char *model_path, double rmax, int nbin, bool is_partial, const char *coord_path="");
     ~RDF();
     void rdf(char *rdf_path);
 private:

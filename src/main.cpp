@@ -212,6 +212,7 @@ int main(int argc, char* argv[])
                 c[0]=be_double(argv[i++]);
                 c[1]=be_double(argv[i++]);
                 c[2]=be_double(argv[i++]);
+                is_c_default=false;
                 continue;
             }else if(0==strcmp(argv[i], "-auto")){
                 i++;
@@ -871,6 +872,8 @@ int main(int argc, char* argv[])
         double rmax=5.0;
         int    nbin=100;
         bool   is_partial=false;
+
+        char   coord_path[PATH_CHAR_NUMBER]; strcpy(coord_path, "");
         while(i<argc){
             if(0==strcmp(argv[i], "-r")){
                 i++;
@@ -887,6 +890,20 @@ int main(int argc, char* argv[])
             }else if(0==strcmp(argv[i], "-o")){
                 i++;
                 strcpy(output_path, argv[i++]);
+            }else if(0==strcmp(argv[i], "-coord")){
+                i++;
+                strcpy(coord_path, "./AAVDP.lmc");
+                while(i<argc){
+                    if(0==strcmp(argv[i], "-coord_o")){
+                        i++;
+                        strcpy(coord_path, argv[i++]);
+                        continue;
+                    }else{
+                        printf("AAVDP: unrecognized option '%s'\n", argv[i]);
+                        printf("Try 'AAVDP -h' for more information");
+                        exit(1);
+                    }
+                }
             }else{
                 printf("AAVDP: unrecognized option '%s'\n", argv[i]);
                 printf("Try 'AAVDP -h' for more information");
@@ -899,7 +916,7 @@ int main(int argc, char* argv[])
         }else{
             strcpy(rdf_path, output_path);
         }
-        RDF rdf(input_path, rmax, nbin, is_partial);
+        RDF rdf(input_path, rmax, nbin, is_partial, coord_path);
         rdf.rdf(rdf_path);
     }else if(0==strcmp(argv[i], "--ssf")){
         i++;
