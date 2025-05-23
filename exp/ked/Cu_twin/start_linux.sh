@@ -1,0 +1,2 @@
+#!/bin/bash
+../../../bin/AAVDP_linux --ked ./Cu111_twin.lmp -e Cu -z 0 1 0 -o ./Cu111_twin.ked -gauss -gauss_sig 0.02 -rotate -rotate_x 0 0 1 -rotate_y 1 0 0

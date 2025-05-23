@@ -1,0 +1,4 @@
+#!/bin/bash
+../../../bin/AAVDP_linux --dkd ./bcc.vasp -q 1.5 -z 1 1 3 -rx 0.25 -ry 0.30 -px 500 -py 600 -o ./bcc.113.dkd -monte -monte_seed ../../../RandomSeeds.data -monte_o ./bcc.mc -rotate -rotate_x 0 3 -1 -rotate_y 10 -1 -3
+../../../bin/AAVDP_linux --dkd ./bcc.vasp -q 1.5 -px 600 -py 600 -o ./bcc.dkd -monte -monte_seed ../../../RandomSeeds.data -monte_o ./bcc.mc
+../../../bin/AAVDP_linux --dkd ./bcc.vasp -q 1.5 -px 600 -py 600 -o ./bcc.no_mc.dkd

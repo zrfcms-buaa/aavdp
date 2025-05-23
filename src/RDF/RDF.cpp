@@ -76,7 +76,16 @@ RDF::RDF(char *model_path, double rmax, int nbin, bool is_partial, const char *c
 	QB_network_free(&QB);
 	QB_pbc_clean(&QB);
 	if(coord_path[0]!='\0'){
+		for(int i=0;i<QB.num_exint;i++){
+			int coord_max=0, coord_min=1e6;
+			for(int j=0;j<natom;j++){
+				if(coord_max<QB.par_exint[i][j]) coord_max=QB.par_exint[i][j];
+				if(coord_min>QB.par_exint[i][j]) coord_min=QB.par_exint[i][j];
+			}
+			printf("[INFO] Range of atomic property %s: %d %d\n", QB.name_exint[i], coord_min, coord_max);
+		}
 		QB_dump_lmc(&QB, coord_path);
+		printf("[INFO] Coordination number for radial distribution function stored in %s\n", coord_path);
 	}
 	QB_free_atom(&QB);
 	printf("[INFO] Ending computation of radial distribution function\n");

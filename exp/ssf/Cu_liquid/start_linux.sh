@@ -1,0 +1,2 @@
+#!/bin/bash
+../../../bin/AAVDP_linux --ssf ./Cu_liquid.lammps -q 8 -n 160 -o ./Cu_liquid.ssf -rdf -rdf_r 7.5 -rdf_n 150

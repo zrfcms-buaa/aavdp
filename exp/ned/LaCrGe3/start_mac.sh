@@ -1,0 +1,3 @@
+#!/bin/bash
+../../../bin/AAVDP_mac --ned ./LaCrGe3.vasp -dw 0.7646 0.1028 0.2458 -2t 10 80 -l 2.43955 -o ./LaCrGe3_line.ned
+../../../bin/AAVDP_mac --ned ./LaCrGe3.vasp -dw 0.7646 0.1028 0.2458 -2t 10 80 -l 2.43955 -o ./LaCrGe3.ned -scherrer -scherrer_d 400 -scherrer_d2t 0.02
