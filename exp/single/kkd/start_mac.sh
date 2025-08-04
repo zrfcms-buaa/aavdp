@@ -1,0 +1,3 @@
+#!/bin/bash
+../../../bin/AAVDP_mac --kkd ../Cu.lmp -e Cu -q 1.5 -rx 0.075 -ry 0.075 -t 0.1 -px 1000 -py 1000 -o ./Cu.001.kkd
+../../../bin/AAVDP_mac --kkd ../Cu_vacancies.lmp -e Cu -q 1.5 -rx 0.075 -ry 0.075 -t 0.1 -px 1000 -py 1000 -o ./Cu_vacancies.001.kkd -scale -scale_i 0 529.88183349
