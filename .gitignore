@@ -1,5 +1,6 @@
 /doc
 /exp/test
+/test
 ./*/*/*/*.mc
 ./*/*/*/*.kkd
 ./*/*/*/*.dkd
