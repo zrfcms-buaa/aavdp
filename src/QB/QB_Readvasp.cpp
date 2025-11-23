@@ -156,9 +156,9 @@ int QB_read_vasp(QB_tools *QB,const char name[1024])
 	if(QB->mat[1][2]<0)QB->startz+=QB->mat[1][2];
 	if(QB->mat[2][2]<0)QB->startz+=QB->mat[2][2];
 	QB->TypeNumber=typelist_n;
-    QB_printf(">>VASP POSCAR file %s is found\n",name);
-    QB_printf(">>total %d atoms\n",QB->TotalNumber);
-    QB_printf(">>total %d atom types\n",QB->TypeNumber);
+    // QB_printf(">>VASP POSCAR file %s is found\n",name);
+    // QB_printf(">>total %d atoms\n",QB->TotalNumber);
+    // QB_printf(">>total %d atom types\n",QB->TypeNumber);
     QB_fclose(fi2);
 	SV_wait_end();
     return 1;

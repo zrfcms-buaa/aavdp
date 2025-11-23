@@ -60,54 +60,175 @@ void quick_sort(KED_KNODE *kstart)
 
 KED::KED(MODEL *model, double Kmag_max, double threshold, double spacing[3], bool is_spacing_auto)
 {
-    printf("[INFO] Starting computation of kinematic electron diffraction...\n");
-    printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", model->lambda);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    if(mpi_rank==0){
+        printf("[INFO] Starting computation of kinematic electron diffraction...\n");
+        printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", model->lambda);
+    }
     lambda=model->lambda;
     Kmagnitude_max=Kmag_max;
-    compute_diffraction_intensity(model, spacing, is_spacing_auto);
-    printf("[INFO] Intensity at the transmission spot: %.8f\n", khead->intensity);
-    printf("[INFO] Number of diffraction intensity (including intensity at the transmission spot): %d\n", numk);
-    printf("[INFO] Range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    filter_diffraction_intensity(threshold);
-    quick_sort(khead, ktail);
-    printf("[INFO] Number of filtered diffraction intensity (including intensity at the transmission spot): %d\n", numk);
-    printf("[INFO] Range of filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    printf("[INFO] Ending computation of kinematic electron diffraction\n");
+    double spacingK[3];
+    if(is_spacing_auto){
+        model->compute_reciprocal_spacing(spacingK, spacing);
+    }else{
+        vector_copy(spacingK, spacing);
+    }
+    int NspacingK[3];
+    for(int i=0;i<3;i++){
+        NspacingK[i]=ceil(Kmagnitude_max/spacingK[i]);
+    }
+    int kmin[3], kmax[3];
+    vector_copy(kmax, NspacingK); vector_constant(kmin, -1, NspacingK);
+    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
+
+    clock_t start, finish;
+    start=clock();
+    int my_count=0, task_id=0;
+    if(mpi_rank==0){
+        printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
+        printf("[INFO] Number of spacings along a*, b*, and c* in reciprocal space: %d %d %d\n", kmax[0], kmax[1], kmax[2]);
+        printf("[INFO] Starting computation of diffraction intensity with %d k-points and %d processes ...\n", num, mpi_size);
+        double hkl0[3]={0.0}, K0[3]={0.0};
+        double intensity0=model->get_diffraction_intensity(0.0, K0, true);
+        add_k_node(hkl0, K0, 0.0, intensity0); my_count++;
+    }
+    for(int ih=kmin[0];ih<=kmax[0];ih++){
+        for(int ik=kmin[1];ik<=kmax[1];ik++){
+            for(int il=kmin[2];il<=kmax[2];il++){
+                task_id++;
+                if(task_id%mpi_size!=mpi_rank) continue;
+                if(0==ih&&0==ik&&0==il) continue;
+                double hkl[3]={double(ih), double(ik), double(il)};
+                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
+                double Kmagnitude=model->get_reciprocal_vector_length(K);
+                if(Kmagnitude<Kmagnitude_max){
+                    model->reciprocal_to_cartesian(K, K);
+                    double intensity=model->get_diffraction_intensity(Kmagnitude, K, false);
+                    if(intensity>KED_INTENSITY_LIMIT){
+                        add_k_node(hkl, K, Kmagnitude, intensity);
+                    }
+                }
+                my_count++;
+            }
+        }
+    }
+    finish=clock();
+    double my_time=double(finish-start)/CLOCKS_PER_SEC;
+    int total_count=0;
+    MPI_Reduce(&my_count, &total_count, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    double total_time=0.0;
+    MPI_Reduce(&my_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    merge_k_node();
+    if(mpi_rank==0){
+        printf("[INFO] Ending computation of diffraction intensity with %d k-points and %d processes\n", total_count, mpi_size);
+        printf("[INFO] Computation time [s]: %.8f\n", total_time);
+        printf("[INFO] Intensity at the transmission spot: %.8f\n", khead->intensity);
+        printf("[INFO] Total number of diffraction intensity (including intensity at the transmission spot): %d\n", numk);
+        printf("[INFO] Total range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        filter_diffraction_intensity(threshold);
+        quick_sort(khead, ktail);
+        printf("[INFO] Total number of filtered diffraction intensity (including intensity at the transmission spot): %d\n", numk);
+        printf("[INFO] Total range of filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        printf("[INFO] Ending computation of kinematic electron diffraction\n");
+    }
 }
 
 KED::KED(MODEL *model, int zone[3], double thickness, double Kmag_max, double threshold, double spacing[3], bool is_spacing_auto)
 {
-    printf("[INFO] Starting computation of kinematic electron diffraction...\n");
-    printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", model->lambda);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    if(mpi_rank==0){
+        printf("[INFO] Starting computation of kinematic electron diffraction...\n");
+        printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", model->lambda);
+    }
     lambda=model->lambda;
     Kmagnitude_max=Kmag_max;
-    compute_diffraction_intensity(model, zone, thickness, spacing, is_spacing_auto);
-    printf("[INFO] Intensity at the transmission spot: %.8f\n", khead->intensity);
-    printf("[INFO] Number of diffraction intensity (including intensity at the transmission spot): %d\n", numk);
-    printf("[INFO] Range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    filter_diffraction_intensity(threshold);
-    printf("[INFO] Number of filtered diffraction intensity (including intensity at the transmission spot): %d\n", numk);
-    printf("[INFO] Range of filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    find_first_and_second_knearests();
-    if(knearest_2==nullptr){
-        printf("[INFO] The first nearest diffraction vectors R1: [%.8f %.8f %.8f]\n", knearest_1->K[0], knearest_1->K[1], knearest_1->K[2]);
-        printf("[WARN] Unable to find the second nearest diffraction vector\n");
+    double spacingK[3];
+    if(is_spacing_auto){
+        model->compute_reciprocal_spacing(spacingK, spacing);
     }else{
-        printf("[INFO] The first and second nearest diffraction vectors R1, R2: [%.8f %.8f %.8f], [%.8f %.8f %.8f] (R2/R1 %.8f and angle %.8f)\n", 
-        knearest_1->K[0], knearest_1->K[1], knearest_1->K[2], knearest_2->K[0], knearest_2->K[1], knearest_2->K[2], knearest_2->Kmagnitude/knearest_1->Kmagnitude, vector_angle(knearest_2->K, knearest_1->K)*RAD_TO_DEG);
+        vector_copy(spacingK, spacing);
     }
-    rotate_by_first_knearest(zone);
-    printf("[INFO] Ending computation of kinematic electron diffraction\n");
+    int NspacingK[3];
+    for(int i=0;i<3;i++){
+        NspacingK[i]=ceil(Kmagnitude_max/spacingK[i]);
+    }
+    int kmin[3], kmax[3];
+    vector_copy(kmax, NspacingK); vector_constant(kmin, -1, NspacingK);
+    double n_zone[3]={double(zone[0]), double(zone[1]), double(zone[2])};
+    vector_normalize(n_zone, n_zone);
+    double upper_bound=thickness/2.0;
+    double lower_bound=-thickness/2.0;
+    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
+
+    clock_t start, finish;
+    start=clock();
+    int my_count=0, task_id=0;
+    if(mpi_rank==0){
+        printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
+        printf("[INFO] Number of spacings along a*, b*, and c* in reciprocal space: %d %d %d\n", kmax[0], kmax[1], kmax[2]);
+        printf("[INFO] Range along zone-[%.8f %.8f %.8f] in reciprocal space [Angstrom-1]: %.8f %.8f\n", n_zone[0], n_zone[1], n_zone[2], lower_bound, upper_bound);
+        printf("[INFO] Starting computation of diffraction intensity with %d k-points and %d processes ...\n", num, mpi_size);
+        double hkl0[3]={0.0}, K0[3]={0.0};
+        double intensity0=model->get_diffraction_intensity(0.0, K0, true);
+        add_k_node(hkl0, K0, 0.0, intensity0); my_count++;
+    }
+    for(int ih=kmin[0];ih<=kmax[0];ih++){
+        for(int ik=kmin[1];ik<=kmax[1];ik++){
+            for(int il=kmin[2];il<=kmax[2];il++){
+                task_id++;
+                if(task_id%mpi_size!=mpi_rank) continue;
+                if(0==ih&&0==ik&&0==il) continue;
+                double hkl[3]={double(ih), double(ik), double(il)};
+                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
+                double Kmagnitude=model->get_reciprocal_vector_length(K);
+                if(Kmagnitude<Kmagnitude_max){
+                    model->reciprocal_to_cartesian(K, K);
+                    double proj=vector_dot(K, n_zone);
+                    if((proj>lower_bound)&&(proj<upper_bound)){
+                        double intensity=model->get_diffraction_intensity(Kmagnitude, K, false);
+                        if(intensity>KED_INTENSITY_LIMIT){
+                            add_k_node(hkl, K, Kmagnitude, intensity);
+                        }
+                    }
+                }
+                my_count++;
+            }
+        }
+    }
+    finish=clock();
+    double my_time=double(finish-start)/CLOCKS_PER_SEC;
+    int total_count=0;
+    MPI_Reduce(&my_count, &total_count, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    double total_time=0.0;
+    MPI_Reduce(&my_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    merge_k_node();
+    if(mpi_rank==0){
+        printf("[INFO] Ending computation of diffraction intensity with %d k-points and %d processes\n", total_count, mpi_size);
+        printf("[INFO] Computation time [s]: %.8f\n", total_time);
+        printf("[INFO] Intensity at the transmission spot: %.8f\n", khead->intensity);
+        printf("[INFO] Total number  of diffraction intensity (including intensity at the transmission spot): %d\n", numk);
+        printf("[INFO] Total range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        filter_diffraction_intensity(threshold);
+        printf("[INFO] Total number of filtered diffraction intensity (including intensity at the transmission spot): %d\n", numk);
+        printf("[INFO] Total range of filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        find_first_and_second_knearests();
+        if(knearest_2==nullptr){
+            printf("[INFO] The first nearest diffraction vectors R1: [%.8f %.8f %.8f]\n", knearest_1->K[0], knearest_1->K[1], knearest_1->K[2]);
+            printf("[WARN] Unable to find the second nearest diffraction vector\n");
+        }else{
+            printf("[INFO] The first and second nearest diffraction vectors R1, R2: [%.8f %.8f %.8f], [%.8f %.8f %.8f] (R2/R1 %.8f and angle %.8f)\n", 
+            knearest_1->K[0], knearest_1->K[1], knearest_1->K[2], knearest_2->K[0], knearest_2->K[1], knearest_2->K[2], knearest_2->Kmagnitude/knearest_1->Kmagnitude, vector_angle(knearest_2->K, knearest_1->K)*RAD_TO_DEG);
+        }
+        rotate_by_first_knearest(zone);
+        printf("[INFO] Ending computation of kinematic electron diffraction\n");
+    }
 }
 
 KED::~KED()
 {
-    KED_KNODE *cur=khead;
-    while(cur!=nullptr){
-        KED_KNODE *temp=cur;
-        cur=cur->next;
-        delete temp;
-    }
+    free_k_node();
 }
 
 void KED::add_k_node(double hkl[3], double K[3], double Kmagnitude, double intensity)
@@ -134,114 +255,59 @@ void KED::add_k_node(double hkl[3], double K[3], double Kmagnitude, double inten
     }
 }
 
-void KED::compute_diffraction_intensity(MODEL *model, double spacing[3], bool is_spacing_auto)
+void KED::merge_k_node()
 {
-    double spacingK[3];
-    if(is_spacing_auto){
-        model->compute_reciprocal_spacing(spacingK, spacing);
-    }else{
-        vector_copy(spacingK, spacing);
+    struct NODE{double h,k,l; double K1, K2, K3; double Kmagnitude; double intensity;};
+    MPI_Datatype MPI_NODE;
+    int blocklengths[4] = {3, 3, 1, 1};
+    MPI_Aint offsets[4] = {offsetof(NODE, h), offsetof(NODE, K1), offsetof(NODE, Kmagnitude), offsetof(NODE, intensity)};
+    MPI_Datatype types[4] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE};
+    MPI_Type_create_struct(4, blocklengths, offsets, types, &MPI_NODE);
+    MPI_Type_commit(&MPI_NODE);
+
+    int numk_all=0;
+    MPI_Reduce(&numk, &numk_all, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    std::vector<int> numks(mpi_size);
+    MPI_Gather(&numk,1,MPI_INT,numks.data(),1,MPI_INT,0,MPI_COMM_WORLD);
+    std::vector<NODE> vec;
+    KED_KNODE *ktemp=khead;
+    while(ktemp){
+        vec.push_back({ktemp->hkl[0],ktemp->hkl[1],ktemp->hkl[2],ktemp->K[0],ktemp->K[1],ktemp->K[2],ktemp->Kmagnitude,ktemp->intensity});
+        ktemp=ktemp->next;
     }
-    int NspacingK[3];
-    for(int i=0;i<3;i++){
-        NspacingK[i]=ceil(Kmagnitude_max/spacingK[i]);
-    }
-    int kmin[3], kmax[3];
-    vector_copy(kmax, NspacingK); vector_constant(kmin, -1, NspacingK);
-    printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
-    printf("[INFO] Number of spacings along a*, b*, and c* in reciprocal space: %d %d %d\n", kmax[0], kmax[1], kmax[2]);
-    printf("[INFO] Starting computation of diffraction intensity...\n");
-    double hkl[3];
-    double K[3]={0.0};
-    double intensity=model->get_diffraction_intensity(0.0, K, true);
-    add_k_node(hkl, K, 0.0, intensity);
-    clock_t start, finish;
-    start=clock();
-    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
-    int count=0;
-    for(int ih=kmin[0];ih<=kmax[0];ih++){
-        for(int ik=kmin[1];ik<=kmax[1];ik++){
-            for(int il=kmin[2];il<=kmax[2];il++){
-                count++;
-                if(0==ih&&0==ik&&0==il) continue;
-                double hkl[3]={double(ih), double(ik), double(il)};
-                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
-                double Kmagnitude=model->get_reciprocal_vector_length(K);
-                if(Kmagnitude<Kmagnitude_max){
-                    model->reciprocal_to_cartesian(K, K);
-                    double intensity=model->get_diffraction_intensity(Kmagnitude, K, false);
-                    if(intensity>KED_INTENSITY_LIMIT){
-                        add_k_node(hkl, K, Kmagnitude, intensity);
-                    }
-                }
-                if(0==count%1000){
-                    printf("[INFO] Completed diffraction intensity %d of %d\n", count, num);
-                }
-            }
+
+    std::vector<int> disps(mpi_size);
+    std::vector<NODE> vec_all;
+    if(mpi_rank==0){
+        vec_all.resize(numk_all);
+        disps[0]=0;
+        for(int i=1; i<mpi_size; ++i){
+            disps[i]=disps[i-1]+numks[i-1];
         }
     }
-    printf("[INFO] Ending computation of diffraction intensity\n");
-    finish=clock();
-    printf("[INFO] Computation time [s]: %.8f\n", double(finish-start)/CLOCKS_PER_SEC);
+    MPI_Gatherv(vec.data(), numk, MPI_NODE, vec_all.data(), numks.data(), disps.data(), MPI_NODE, 0, MPI_COMM_WORLD);
+    free_k_node();
+    
+    if(mpi_rank==0){
+        for(auto &vec : vec_all){
+            double hkl[3]={vec.h,vec.k,vec.l};
+            double K[3]={vec.K1,vec.K2,vec.K3};
+            add_k_node(hkl, K, vec.Kmagnitude, vec.intensity);
+        }
+    }
+    MPI_Type_free(&MPI_NODE);
 }
 
-void KED::compute_diffraction_intensity(MODEL *model, int zone[3], double thickness, double spacing[3], bool is_spacing_auto)
+void KED::free_k_node()
 {
-    double spacingK[3];
-    if(is_spacing_auto){
-        model->compute_reciprocal_spacing(spacingK, spacing);
-    }else{
-        vector_copy(spacingK, spacing);
+    KED_KNODE *cur=khead;
+    while(cur!=nullptr){
+        KED_KNODE *temp=cur;
+        cur=cur->next;
+        delete temp;
     }
-    int NspacingK[3];
-    for(int i=0;i<3;i++){
-        NspacingK[i]=ceil(Kmagnitude_max/spacingK[i]);
-    }
-    int kmin[3], kmax[3];
-    vector_copy(kmax, NspacingK); vector_constant(kmin, -1, NspacingK);
-    double n_zone[3]={double(zone[0]), double(zone[1]), double(zone[2])};
-    vector_normalize(n_zone, n_zone);
-    double upper_bound=thickness/2.0;
-    double lower_bound=-thickness/2.0;
-    printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
-    printf("[INFO] Number of spacings along a*, b*, and c* in reciprocal space: %d %d %d\n", kmax[0], kmax[1], kmax[2]);
-    printf("[INFO] Range along zone-[%.8f %.8f %.8f] in reciprocal space [Angstrom-1]: %.8f %.8f\n", n_zone[0], n_zone[1], n_zone[2], lower_bound, upper_bound);
-    double hkl[3]={0.0};
-    double K[3]={0.0};
-    double intensity=model->get_diffraction_intensity(0.0, K, true);
-    add_k_node(hkl, K, 0.0, intensity);
-    printf("[INFO] Starting computation of diffraction intensity...\n");
-    clock_t start, finish;
-    start=clock();
-    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
-    int count=0;
-    for(int ih=kmin[0];ih<=kmax[0];ih++){
-        for(int ik=kmin[1];ik<=kmax[1];ik++){
-            for(int il=kmin[2];il<=kmax[2];il++){
-                if(0==ih&&0==ik&&0==il) continue;
-                double hkl[3]={double(ih), double(ik), double(il)};
-                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
-                double Kmagnitude=model->get_reciprocal_vector_length(K);
-                if(Kmagnitude<Kmagnitude_max){
-                    model->reciprocal_to_cartesian(K, K);
-                    double proj=vector_dot(K, n_zone);
-                    if((proj>lower_bound)&&(proj<upper_bound)){
-                        double intensity=model->get_diffraction_intensity(Kmagnitude, K, false);
-                        if(intensity>KED_INTENSITY_LIMIT){
-                            add_k_node(hkl, K, Kmagnitude, intensity);
-                        }
-                    }
-                }
-                count++;
-                if(0==count%1000){
-                    printf("[INFO] Completed diffraction intensity %d of %d\n", count, num);
-                }
-            }
-        }
-    }
-    printf("[INFO] Ending computation of diffraction intensity\n");
-    finish=clock();
-    printf("[INFO] Computation time [s]: %.2f.\n", double(finish-start)/CLOCKS_PER_SEC);
+    khead=ktail=nullptr;
+    numk=0;  
 }
 
 void KED::filter_diffraction_intensity(double threshold)
@@ -315,6 +381,7 @@ void KED::rotate(double x[3], double y[3])
 
 void KED::ked(char *ked_path)
 {
+    if(mpi_rank!=0) return;
     FILE *fp=nullptr;
     fp=fopen(ked_path,"w");
     fprintf(fp, "# N_1\tN_2\tN_3\tK_1\tK_2\tK_3\tx\ty\tz\tintensity\tintensity_norm (%d points, rotated by x-[%.8f %.8f %.8f], y-[%.8f %.8f %.8f], and z-[%.8f %.8f %.8f])\n", numk-1,
@@ -344,6 +411,7 @@ void KED::ked(char *ked_path)
 
 void KED::ked(char *ked_path, double sigma, double dx)
 {
+    if(mpi_rank!=0) return;
     int    nbin=2*round(Kmagnitude_max/dx)+1;
     int    nbin_half=nbin/2;
     double *pos_x=nullptr, **intensity=nullptr;
@@ -423,6 +491,9 @@ void KED::img(char *png_path, double *x, double *y, double *value, int num, doub
 
 KED::KED(char *ked3_path)
 {
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    if(mpi_rank!=0) return;
     FILE *fp=fopen(ked3_path, "r");
     if(fp==NULL){
         printf("[ERROR] Unable to open file %s\n", ked3_path);
@@ -468,8 +539,49 @@ KED::KED(char *ked3_path)
     }
 }
 
+void KED::split_k_node()
+{
+    struct NODE{double h,k,l; double K1, K2, K3; double Kmagnitude; double intensity;};
+    MPI_Datatype MPI_NODE;
+    int blocklengths[4] = {3, 3, 1, 1};
+    MPI_Aint offsets[4] = {offsetof(NODE, h), offsetof(NODE, K1), offsetof(NODE, Kmagnitude), offsetof(NODE, intensity)};
+    MPI_Datatype types[4] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE};
+    MPI_Type_create_struct(4, blocklengths, offsets, types, &MPI_NODE);
+    MPI_Type_commit(&MPI_NODE);
+
+    std::vector<NODE> vec_all;
+    std::vector<int> counts(mpi_size), disps(mpi_size);
+    if(mpi_rank==0){
+        KED_KNODE *ktemp=khead;
+        while(ktemp){
+            vec_all.push_back({ktemp->hkl[0],ktemp->hkl[1],ktemp->hkl[2],ktemp->K[0],ktemp->K[1],ktemp->K[2],ktemp->Kmagnitude,ktemp->intensity});
+            ktemp=ktemp->next;
+        }
+        int num_all=vec_all.size();
+        int base=numk/mpi_size, extra=numk%mpi_size;
+        for(int i=0; i<mpi_size; i++)
+            counts[i]=base+(i<extra?1:0);
+        disps[0]=0;
+        for(int i=1; i<mpi_size; i++)
+            disps[i]=disps[i-1]+counts[i-1];
+        free_k_node();
+    }
+    MPI_Bcast(counts.data(), mpi_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    int num_local=counts[mpi_rank];
+    std::vector<NODE> vec_local(num_local);
+    MPI_Scatterv(vec_all.data(), counts.data(), disps.data(), MPI_NODE, vec_local.data(), num_local, MPI_NODE,0, MPI_COMM_WORLD);
+    for(auto &vec:vec_all){
+        double hkl[3]={vec.h, vec.k, vec.l};
+        double K[3]={vec.K1, vec.K2, vec.K3};
+        add_k_node(hkl, K, vec.Kmagnitude, vec.intensity);
+    }
+    MPI_Type_free(&MPI_NODE);
+}
+
 void KED::ked3(char *ked3_path)
 {
+    if(mpi_rank!=0) return;
     FILE *fp=fopen(ked3_path, "w");
     fprintf(fp, "ELECTRON_WAVELENTH\n");
     fprintf(fp, "%.8f\n", lambda);
@@ -528,43 +640,130 @@ void KED::ked3(char *ked3_path)
 
 KKD::KKD(KED *ked, double xaxis[3], double yaxis[3], double zaxis[3], double thickness, double ratiox, double ratioy, int npx, int npy, char *mode)
 {
-    printf("[INFO] Starting computation of kinematic Kikuchi diffraction...\n");
+    mpi_rank=ked->mpi_rank; mpi_size=ked->mpi_size;
+    if(mpi_rank==0){
+        printf("[INFO] Starting computation of kinematic Kikuchi diffraction...\n");
+        printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", ked->lambda);
+        printf("[INFO] Intensity at the transmission spot: %.8f\n", ked->khead->intensity);
+        printf("[INFO] Total number of diffraction intensity (including intensity at the transmission spot): %d\n", ked->numk);
+        printf("[INFO] Total range of diffraction intensity: %.8f %.8f\n", ked->intensity_min, ked->intensity_max);
+    }
+    ked->split_k_node();
+
     double kn=1.0/ked->lambda;
-    printf("[INFO] Electron wavelength [Angstrom]: %.8f\n", ked->lambda);
-    printf("[INFO] Intensity at the transmission spot: %.8f\n", ked->khead->intensity);
-    printf("[INFO] Number of diffraction intensity (including intensity at the transmission spot): %d\n", ked->numk);
-    printf("[INFO] Range of diffraction intensity: %.8f %.8f\n", ked->intensity_min, ked->intensity_max);
     numpx=npx; numpy=npy;
     rotate(xaxis, yaxis, zaxis);
     compute_Kikuchi_sphere_projection(ratiox, ratioy, kn, mode);
-    printf("[INFO] Kikuchi pattern has %d pixels along x-[%.8f %.8f %.8f] and %d pixels along y-[%.8f %.8f %.8f] under zone-[%.8f %.8f %.8f]\n", 
-            numpx, axes[0][0], axes[0][1], axes[0][2], numpy, axes[1][0], axes[1][1], axes[1][2], axes[2][0], axes[2][1], axes[2][2]);
-    printf("[INFO] Kikuchi pattern has %.8f distance [degree] along x axis and %.8f distance [degree] along y axis\n", thetax*RAD_TO_DEG, thetay*RAD_TO_DEG);
-    printf("[INFO] Kikuchi pattern has %.8f distance [Angstrom-1] along x axis and %.8f distance [Angstrom-1] along y axis\n", thetax*kn, thetay*kn);
-    compute_Kikuchi_intensity_projection(ked, zaxis, thickness, kn);
-    printf("[INFO] Number of Kikuchi band on Kikuchi pattern: %d\n", numk);
-    printf("[INFO] Range of Kikuchi intensity on Kikuchi pattern: %.8f %.8f\n", intensity_min, intensity_max);
-    KKD_KNODE *ktemp=khead;
-    for(int i=0;i<numk&&ktemp!=nullptr;i++){
-        printf("[INFO] Kikuchi band %d: N-[%d %d %d] K-[%.8f %.8f %.8f] Kwidth-%.8f Kintensity1-%.8f Kintensity2-%.8f\n", i+1, 
-        int(ktemp->hkl[0]), int(ktemp->hkl[1]), int(ktemp->hkl[2]), ktemp->K[0], ktemp->K[1], ktemp->K[2], ktemp->Kwidth, ktemp->intensity1, ktemp->intensity2);
-        ktemp=ktemp->next;
+    if(mpi_rank==0){
+        printf("[INFO] Kikuchi pattern has %d pixels along x-[%.8f %.8f %.8f] and %d pixels along y-[%.8f %.8f %.8f] under zone-[%.8f %.8f %.8f]\n", 
+                numpx, axes[0][0], axes[0][1], axes[0][2], numpy, axes[1][0], axes[1][1], axes[1][2], axes[2][0], axes[2][1], axes[2][2]);
+        printf("[INFO] Kikuchi pattern has %.8f distance [degree] along x axis and %.8f distance [degree] along y axis\n", thetax*RAD_TO_DEG, thetay*RAD_TO_DEG);
+        printf("[INFO] Kikuchi pattern has %.8f distance [Angstrom-1] along x axis and %.8f distance [Angstrom-1] along y axis\n", thetax*kn, thetay*kn);
+        printf("[INFO] Starting projection of diffraction intensity on the Kikuchi pattern with %d processes...\n", mpi_size);
     }
-    printf("[INFO] Ending computation of kinematic Kikuchi diffraction\n");
+
+    callocate_2d(&screenI, numpy, numpx, 0.0);
+    clock_t start, finish;
+    start=clock();
+    quick_sort(ked->khead);
+    KED_KNODE *ktemp=ked->khead;
+    int num=ked->numk;
+    if(mpi_rank==0){
+        ktemp=ktemp->next;
+        num=num-1;
+    }
+    int my_count=0;
+    bool is_count=false;
+    for(int i=0;i<num&&ktemp!=nullptr;i++){
+        double upper_bound=sqrt(kn*kn+ktemp->Kmagnitude*thickness/2.0);
+        double lower_bound=sqrt(kn*kn-ktemp->Kmagnitude*thickness/2.0);
+        // double upper_bound=ktemp->Kmagnitude/2.0+thickness/2.0;
+        // double lower_bound=ktemp->Kmagnitude/2.0-thickness/2.0;
+        double hkl[3]; vector_copy(hkl, ktemp->hkl);
+        double intensity=ktemp->intensity;
+        for(int j=0;j<numpy;j++){
+            for(int k=0;k<numpx;k++){
+                double d[3];
+                vector_difference(d, screenK0[j][k], ktemp->K);
+                double proj=vector_length(d);
+                // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
+                if(proj<=upper_bound&&proj>=lower_bound){
+                    screenI[j][k]+=intensity;
+                    is_count=true;
+                }
+            }
+        }
+        ktemp=ktemp->next;
+        if(is_count){
+            if((0==int(hkl[0])+int(ktemp->hkl[0]))&&(0==int(hkl[1])+int(ktemp->hkl[1]))&&(0==int(hkl[2])+int(ktemp->hkl[2]))){
+                for(int j=0;j<numpy;j++){
+                    for(int k=0;k<numpx;k++){
+                        double d[3];
+                        vector_difference(d, screenK0[j][k], ktemp->K);
+                        double proj=vector_length(d);
+                        // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
+                        if(proj<=upper_bound&&proj>=lower_bound){
+                            screenI[j][k]+=ktemp->intensity;
+                        }
+                    }
+                }
+                add_k_node(ktemp->hkl, ktemp->K, ktemp->Kmagnitude, ktemp->intensity, intensity);
+            }
+        }else if((zaxis[1]*ktemp->K[2]-zaxis[2]*ktemp->K[1])<1.0e-6&&(zaxis[2]*ktemp->K[0]-zaxis[0]*ktemp->K[2])<1.0e-6&&(zaxis[0]*ktemp->K[1]-zaxis[1]*ktemp->K[0])<1.0e-6){
+            for(int j=0;j<numpy;j++){
+                for(int k=0;k<numpx;k++){
+                    double d[3];
+                    vector_difference(d, screenK0[j][k], ktemp->K);
+                    double proj=vector_length(d);
+                    // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
+                    if(proj<=upper_bound&&proj>=lower_bound){
+                        screenI[j][k]+=ktemp->intensity;
+                    }
+                }
+            }
+            add_k_node(ktemp->hkl, ktemp->K, ktemp->Kmagnitude, ktemp->intensity, intensity);
+        }
+        ktemp=ktemp->next;
+        is_count=false;
+        my_count++;
+    }
+    finish=clock();
+    double my_time=double(finish-start)/CLOCKS_PER_SEC;
+    int total_count=0;
+    MPI_Reduce(&my_count, &total_count, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    double total_time=0.0;
+    MPI_Reduce(&my_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    if(mpi_rank==0){
+        printf("[INFO] Ending projection of diffraction intensity on the Kikuchi pattern with %d k-points and %d processes\n", total_count, mpi_size);
+        printf("[INFO] Projection time [s]: %.8f.\n", total_time);
+    }
+    merge_screenI();
+    if(mpi_rank==0){
+        for(int i=0;i<numpy;i++){
+            for(int j=0;j<numpx;j++){
+                if(intensity_min>screenI[i][j]) intensity_min=screenI[i][j];
+                if(intensity_max<screenI[i][j]) intensity_max=screenI[i][j];
+            }
+        }
+        printf("[INFO] Range of Kikuchi intensity on Kikuchi pattern: %.8f %.8f\n", intensity_min, intensity_max);
+    }
+    merge_k_node();
+    if(mpi_rank==0){
+        printf("[INFO] Number of Kikuchi band on Kikuchi pattern: %d\n", numk);
+        KKD_KNODE *ktemp=khead;
+        for(int i=0;i<numk&&ktemp!=nullptr;i++){
+            printf("[INFO] Kikuchi band %d: N-[%d %d %d] K-[%.8f %.8f %.8f] Kwidth-%.8f Kintensity1-%.8f Kintensity2-%.8f\n", i+1, 
+            int(ktemp->hkl[0]), int(ktemp->hkl[1]), int(ktemp->hkl[2]), ktemp->K[0], ktemp->K[1], ktemp->K[2], ktemp->Kwidth, ktemp->intensity1, ktemp->intensity2);
+            ktemp=ktemp->next;
+        }
+        printf("[INFO] Ending computation of kinematic Kikuchi diffraction\n");
+    }
 }
 
 KKD::~KKD()
 {
-    if(0!=numpx&&0!=numpy){
-        deallocate_3d(screenK0, numpy, numpx);
-        deallocate_2d(screenI, numpy);
-    }
-    KKD_KNODE *cur=khead;
-    while(cur!=nullptr){
-        KKD_KNODE *temp=cur;
-        cur=cur->next;
-        delete temp;
-    }
+    free_screenI();
+    free_k_node();
 }
 
 void KKD::rotate(double x[3], double y[3], double z[3])
@@ -627,6 +826,40 @@ void KKD::compute_Kikuchi_sphere_projection(double ratiox, double ratioy, double
     }
 }
 
+void KKD::merge_screenI()
+{
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(mpi_rank==0){
+        double *row_buffer; mallocate(&row_buffer, numpx);
+        for(int row=0; row<numpy; row++){
+            if(row==0){
+                MPI_Reduce(MPI_IN_PLACE, screenI[row], numpx, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+            } else {
+                MPI_Reduce(screenI[row], row_buffer, numpx, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+                for(int col=0; col<numpx; col++){
+                    screenI[row][col]=row_buffer[col];
+                }
+            }
+        }
+        deallocate(row_buffer); 
+    }else{
+        for(int row=0; row<numpy; row++){
+            MPI_Reduce(screenI[row], NULL, numpx, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        }
+        free_screenI();
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
+void KKD::free_screenI()
+{
+    if(0!=numpx&&0!=numpy){
+        deallocate_2d(screenI, numpy);
+        deallocate_3d(screenK0, numpy, numpx);
+    }
+    numpy=numpx=0;
+}
+
 void KKD::add_k_node(double hkl[3], double K[3], double Kwidth, double intensity1, double intensity2)
 {
     if(khead==nullptr&&ktail==nullptr){
@@ -651,85 +884,64 @@ void KKD::add_k_node(double hkl[3], double K[3], double Kwidth, double intensity
     }
 }
 
-void KKD::compute_Kikuchi_intensity_projection(KED *ked, double zaxis[3], double thickness, double kn)
+void KKD::merge_k_node()
 {
-    callocate_2d(&screenI, numpy, numpx, 0.0);
-    printf("[INFO] Starting projection of diffraction intensity on the Kikuchi pattern...\n");
-    clock_t start, finish;
-    start=clock();
-    quick_sort(ked->khead);
-    KED_KNODE *ktemp=ked->khead->next;
-    int count=0;
-    bool is_count=false;
-    for(int i=1;i<ked->numk&&ktemp!=nullptr;i++){
-        double upper_bound=sqrt(kn*kn+ktemp->Kmagnitude*thickness/2.0);
-        double lower_bound=sqrt(kn*kn-ktemp->Kmagnitude*thickness/2.0);
-        // double upper_bound=ktemp->Kmagnitude/2.0+thickness/2.0;
-        // double lower_bound=ktemp->Kmagnitude/2.0-thickness/2.0;
-        double hkl[3]; vector_copy(hkl, ktemp->hkl);
-        double intensity=ktemp->intensity;
-        for(int j=0;j<numpy;j++){
-            for(int k=0;k<numpx;k++){
-                double d[3];
-                vector_difference(d, screenK0[j][k], ktemp->K);
-                double proj=vector_length(d);
-                // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
-                if(proj<=upper_bound&&proj>=lower_bound){
-                    screenI[j][k]+=intensity;
-                    is_count=true;
-                }
-            }
-        }
+    struct NODE{double h,k,l; double K1, K2, K3; double Kwidth; double intensity1, intensity2;};
+    MPI_Datatype MPI_NODE;
+    int blocklengths[4] = {3, 3, 1, 2};
+    MPI_Aint offsets[4] = {offsetof(NODE, h), offsetof(NODE, K1), offsetof(NODE, Kwidth), offsetof(NODE, intensity1)};
+    MPI_Datatype types[4] = {MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE};
+    MPI_Type_create_struct(4, blocklengths, offsets, types, &MPI_NODE);
+    MPI_Type_commit(&MPI_NODE);
+
+    int numk_all=0;
+    MPI_Reduce(&numk, &numk_all, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    std::vector<int> numks(mpi_size);
+    MPI_Gather(&numk,1,MPI_INT,numks.data(),1,MPI_INT,0,MPI_COMM_WORLD);
+    std::vector<NODE> vec;
+    KKD_KNODE *ktemp=khead;
+    while(ktemp){
+        vec.push_back({ktemp->hkl[0],ktemp->hkl[1],ktemp->hkl[2],ktemp->K[0],ktemp->K[1],ktemp->K[2],ktemp->Kwidth,ktemp->intensity1,ktemp->intensity2});
         ktemp=ktemp->next;
-        if(is_count){
-            if((0==int(hkl[0])+int(ktemp->hkl[0]))&&(0==int(hkl[1])+int(ktemp->hkl[1]))&&(0==int(hkl[2])+int(ktemp->hkl[2]))){
-                for(int j=0;j<numpy;j++){
-                    for(int k=0;k<numpx;k++){
-                        double d[3];
-                        vector_difference(d, screenK0[j][k], ktemp->K);
-                        double proj=vector_length(d);
-                        // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
-                        if(proj<=upper_bound&&proj>=lower_bound){
-                            screenI[j][k]+=ktemp->intensity;
-                        }
-                    }
-                }
-                add_k_node(ktemp->hkl, ktemp->K, ktemp->Kmagnitude, ktemp->intensity, intensity);
-            }
-        }else if((zaxis[1]*ktemp->K[2]-zaxis[2]*ktemp->K[1])<1.0e-6&&(zaxis[2]*ktemp->K[0]-zaxis[0]*ktemp->K[2])<1.0e-6&&(zaxis[0]*ktemp->K[1]-zaxis[1]*ktemp->K[0])<1.0e-6){
-            for(int j=0;j<numpy;j++){
-                for(int k=0;k<numpx;k++){
-                    double d[3];
-                    vector_difference(d, screenK0[j][k], ktemp->K);
-                    double proj=vector_length(d);
-                    // double proj=vector_dot(screenK0[j][k], ktemp->K)/ktemp->Kmagnitude;
-                    if(proj<=upper_bound&&proj>=lower_bound){
-                        screenI[j][k]+=ktemp->intensity;
-                    }
-                }
-            }
-            add_k_node(ktemp->hkl, ktemp->K, ktemp->Kmagnitude, ktemp->intensity, intensity);
-        }
-        ktemp=ktemp->next;
-        is_count=false;
-        count++;
-        if(0==count%100){
-            printf("[INFO] Completed diffraction intensity %d of %d\n", count, ked->numk-1);
+    }
+
+    std::vector<int> disps(mpi_size);
+    std::vector<NODE> vec_all;
+    if(mpi_rank==0){
+        vec_all.resize(numk_all);
+        disps[0]=0;
+        for(int i=1; i<mpi_size; ++i){
+            disps[i]=disps[i-1]+numks[i-1];
         }
     }
-    printf("[INFO] Ending projection of diffraction intensity on the Kikuchi pattern\n");
-    finish=clock();
-    printf("[INFO] Projection time [s]: %.8f.\n", double(finish-start)/CLOCKS_PER_SEC);
-    for(int i=0;i<numpy;i++){
-        for(int j=0;j<numpx;j++){
-            if(intensity_min>screenI[i][j]) intensity_min=screenI[i][j];
-            if(intensity_max<screenI[i][j]) intensity_max=screenI[i][j];
+    MPI_Gatherv(vec.data(), numk, MPI_NODE, vec_all.data(), numks.data(), disps.data(), MPI_NODE, 0, MPI_COMM_WORLD);
+    free_k_node();
+    
+    if(mpi_rank==0){
+        for(auto &vec : vec_all){
+            double hkl[3]={vec.h,vec.k,vec.l};
+            double K[3]={vec.K1,vec.K2,vec.K3};
+            add_k_node(hkl, K, vec.Kwidth, vec.intensity1, vec.intensity2);
         }
     }
+    MPI_Type_free(&MPI_NODE);
+}
+
+void KKD::free_k_node()
+{
+    KKD_KNODE *cur=khead;
+    while(cur!=nullptr){
+        KKD_KNODE *temp=cur;
+        cur=cur->next;
+        delete temp;
+    }
+    khead=ktail=nullptr;
+    numk=0;  
 }
 
 void KKD::kkd(char* kkd_path, char background)
 {
+    if(mpi_rank!=0) return;
     FILE *fp=nullptr;
     fp=fopen(kkd_path,"w");
     fprintf(fp, "KIKUCHI_IMAGE_SIZE\n");
@@ -751,6 +963,7 @@ void KKD::kkd(char* kkd_path, char background)
 
 void KKD::kkd(char* kkd_path, double vmax, double vmin, char background)
 {
+    if(mpi_rank!=0) return;
     FILE *fp=nullptr;
     fp=fopen(kkd_path,"w");
     fprintf(fp, "KIKUCHI_IMAGE_SIZE\n");

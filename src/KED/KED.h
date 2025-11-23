@@ -6,6 +6,8 @@
 #include <fstream>
 #include <cmath>
 #include <ctime>
+#include <vector>
+#include <mpi.h>
 #include "../MODEL/MODEL.h"
 #include "../MATH/MATH.h"
 #include "../MATH/GRAPH.h"
@@ -35,6 +37,7 @@ extern void quick_sort(KED_KNODE *kstart);
 class KED
 {
 public:
+    int    mpi_rank=0, mpi_size=1;
     int    numk=0;
     double lambda;
     KED_KNODE  *khead=nullptr;
@@ -48,14 +51,15 @@ public:
     ~KED();
     void   filter_diffraction_intensity(double threshold);
     void   rotate(double x[3], double y[3]);
+    void   split_k_node();
     void   ked(char *ked_path);
     void   ked(char *ked_path, double sigma, double dx);
     void   ked3(char *ked3_path);
 private:
     double axes[3][3]={0.0};
     void   add_k_node(double hkl[3], double K[3], double Kmagnitude, double intensity);
-    void   compute_diffraction_intensity(MODEL *model, double spacing[3], bool is_spacing_auto);
-    void   compute_diffraction_intensity(MODEL *model, int zone[3], double thickness, double spacing[3], bool is_spacing_auto);
+    void   merge_k_node();
+    void   free_k_node();
     void   find_first_and_second_knearests();
     void   rotate_by_first_knearest(int zone[3]);
     void   img(char *png_path, double *x, double *y, double *value, int num, double limit);
@@ -76,6 +80,7 @@ class KKD
 public:
     KKD(KED *ked, double xaxis[3], double yaxis[3], double zaxis[3], double thickness, double ratiox, double ratioy, int npx, int npy, char *mode);
     ~KKD();
+    int    mpi_rank=0, mpi_size=1;
     int    numk=0;//g
     KKD_KNODE  *khead=nullptr;
     KKD_KNODE  *ktail=nullptr;
@@ -90,8 +95,11 @@ private:
     double axes[3][3]={0.0};
     void   rotate(double x[3], double y[3], double z[3]);
     void   add_k_node(double hkl[3], double K[3], double Kwidth, double intensity1, double intensity2);
+    void   merge_k_node();
+    void   free_k_node();
     void   compute_Kikuchi_sphere_projection(double ratiox, double ratioy, double kn, char *mode);
-    void   compute_Kikuchi_intensity_projection(KED *ked, double zaxis[3], double thickness, double kn);
+    void   merge_screenI();
+    void   free_screenI();
 };
 
 #endif

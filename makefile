@@ -1,16 +1,16 @@
-CXX=g++ -std=c++11
-SYS=linux
+CXX=mpicxx
+SYS=win
 INC=-I ./include:./src/QSPG/spglib:./src/QB:./src/QSPG:./src/MATH:./src/MODEL:./src/XRD:./src/KED:./src/DED:./src/RDF
-LIB=./lib/$(SYS)/liblapacke.a ./lib/$(SYS)/liblapack.a ./lib/$(SYS)/libcblas.a ./lib/$(SYS)/librefblas.a ./lib/$(SYS)/libgfortran.a ./lib/$(SYS)/libquadmath.a ./lib/$(SYS)/libpng16.a ./lib/$(SYS)/libz.a
+LIB=./lib/$(SYS)/liblapacke.a ./lib/$(SYS)/liblapack.a ./lib/$(SYS)/libgfortran.dll.a ./lib/$(SYS)/libcblas.a ./lib/$(SYS)/librefblas.a ./lib/$(SYS)/libpng16.a ./lib/$(SYS)/libz.a
 
 SRC=$(wildcard ./src/*/*/*.cpp ./src/*/*.cpp ./src/*.cpp)
 OBJ=$(patsubst %.cpp, %.o, $(SRC))
 
-./bin/AAVDP_linux: $(OBJ)
-	@echo "Start building AAVDP on Linux platform..."
+./bin/AAVDP_win: $(OBJ)
+	@echo "Start building AAVDP on Windows platform..."
 	$(CXX) $(OBJ) -o $@ \
-	-g -static $(INC) $(LIB)
-	@echo "End building AAVDP on Linux platform."
+	-g $(INC) $(LIB)
+	@echo "End building AAVDP on Windows platform."
 
 %.o: %.cpp
 	@echo $<

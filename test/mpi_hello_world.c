@@ -3,7 +3,7 @@
 
 int main(int argc, char** argv) {
     // Initialize the MPI environment
-    MPI_Init(NULL, NULL);
+    MPI_Init(&argc, &argv);
 
     // Get the number of processes
     int world_size;
@@ -22,6 +22,6 @@ int main(int argc, char** argv) {
     printf("Hello world from processor %s, rank %d out of %d processors\n",
            processor_name, world_rank, world_size);
 
-    // Finalize the MPI environment.
+    Finalize the MPI environment.
     MPI_Finalize();
 }

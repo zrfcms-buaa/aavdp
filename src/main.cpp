@@ -1,10 +1,12 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <mpi.h>
 #include "main.h"
 
 int main(int argc, char* argv[])
 {
+    MPI_Init(&argc, &argv);
     int    i=1;
     if(argc<2){
         print_version();
@@ -991,4 +993,5 @@ int main(int argc, char* argv[])
         printf("AAVDP: unrecognized mode '%s'\n", argv[i]);
         printf("Try 'AAVDP -h' for more information'\n");
     }
+    MPI_Finalize();
 }

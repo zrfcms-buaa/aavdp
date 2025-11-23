@@ -268,9 +268,9 @@ int QB_read_lmc(QB_tools *QB,const char name[50])
 		QB->atom[i].type=QB->atom[i].type+1-type_flag;
 	}
 	QB->TypeNumber=QB->TypeNumber+1-type_flag;
-    QB_printf(">>LAMMPS dump file %s is found\n",name);
-    QB_printf(">>total %d atoms\n",QB->TotalNumber);
-    QB_printf(">>total %d atom types\n",QB->TypeNumber);
+    // QB_printf(">>LAMMPS dump file %s is found\n",name);
+    // QB_printf(">>total %d atoms\n",QB->TotalNumber);
+    // QB_printf(">>total %d atom types\n",QB->TypeNumber);
     QB_fclose(input);
 	SV_wait_end();
     if(QB_checkdat_err){QB_checkdat_err=0;return -3;}//char data in numbers

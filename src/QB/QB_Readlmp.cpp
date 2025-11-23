@@ -103,9 +103,9 @@ int QB_read_lmp(QB_tools *QB,const char name[50])
 		QB->zeroy=QB->starty;
 		QB->zeroz=QB->startz;
 	}
-    QB_printf(">>LAMMPS dump file %s is found\n",name);
-    QB_printf(">>total %d atoms\n",QB->TotalNumber);
-    QB_printf(">>total %d atom types\n",QB->TypeNumber);
+    // QB_printf(">>LAMMPS dump file %s is found\n",name);
+    // QB_printf(">>total %d atoms\n",QB->TotalNumber);
+    // QB_printf(">>total %d atom types\n",QB->TypeNumber);
     QB_fclose(fi2);
 	SV_wait_end();
     return 1;

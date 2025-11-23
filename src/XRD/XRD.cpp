@@ -39,29 +39,89 @@ void quick_sort(XRD_KNODE *khead, XRD_KNODE *kend)
 
 XRD::XRD(MODEL *model, double min2Theta, double max2Theta, double threshold, double spacing[3], bool is_spacing_auto)
 {
-    printf("[INFO] Starting computation of %s diffraction...\n", model->radiation);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+
     minTheta=min2Theta*DEG_TO_RAD_HALF; 
     maxTheta=max2Theta*DEG_TO_RAD_HALF;
-    compute_diffraction_intensity(model, spacing, is_spacing_auto);
-    printf("[INFO] Number of diffraction intensity: %d\n", numk);
-    printf("[INFO] Range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    unique_diffraction_intensity();
-    printf("[INFO] Number of unique diffraction intensity: %d\n", numk);
-    printf("[INFO] Range of unique diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    filter_diffraction_intensity(threshold);
-    printf("[INFO] Number of filtered diffraction intensity: %d\n", numk);
-    printf("[INFO] Range of filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
-    printf("[INFO] Ending computation of %s diffraction\n", model->radiation);
+    double Kmagnitude_min=2.0/model->lambda*sin(minTheta);
+    double Kmagnitude_max=2.0/model->lambda*sin(maxTheta);
+    double spacingK[3];
+    if(is_spacing_auto){
+        model->compute_reciprocal_spacing(spacingK, spacing);
+    }else{
+        vector_copy(spacingK, spacing);
+    }
+    int kmax[3];
+    for(int i=0;i<3;i++){
+        kmax[i]=ceil(Kmagnitude_max/spacingK[i]);
+    }
+    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
+
+    if(mpi_rank==0){
+        printf("[INFO] Starting computation of %s diffraction...\n", model->radiation);
+        printf("[INFO] Range along a*, b*, or c* in reciprocal space [Angstrom-1]: %.8f %.8f\n", Kmagnitude_min, Kmagnitude_max);
+        printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
+        printf("[INFO] Starting computation of diffraction intensity with %d k-points and %d processes ...\n", num, mpi_size);
+    }
+
+    clock_t start, finish;
+    start=clock();
+    int my_count=0, task_id=0;
+    for(int ih=-kmax[0];ih<=kmax[0];++ih){
+        for(int ik=-kmax[1];ik<=kmax[1];++ik){
+            for(int il=-kmax[2];il<=kmax[2];++il){
+                task_id++;
+                if(task_id%mpi_size!=mpi_rank) continue;
+                
+                if(0==ih&&0==ik&&0==il) continue;
+                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
+                double Kmag=model->get_reciprocal_vector_length(K);
+                if(Kmag<=Kmagnitude_max&&Kmag>=Kmagnitude_min){
+                    model->reciprocal_to_cartesian(K, K);
+                    int    hkl[3]={ih, ik, il};
+                    double theta=asin(0.5*model->lambda*Kmag);
+                    double intensity=model->get_diffraction_intensity(theta, K);
+                    if(intensity>XRD_INTENSITY_LIMIT){
+                        add_k_node(hkl, theta, intensity, 1);
+                    }
+                }
+                my_count++;
+                if(0==my_count%1000){
+                    printf("[INFO] At rank %d, completed diffraction intensity %d\n", mpi_rank, my_count);
+                }
+            }
+        }
+    }
+    finish=clock();
+    double my_time=double(finish-start)/CLOCKS_PER_SEC;
+
+    int total_count=0;
+    MPI_Reduce(&my_count, &total_count, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    double total_time=0.0;
+    MPI_Reduce(&my_time, &total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(mpi_rank==0){
+        printf("[INFO] Ending computation of diffraction intensity with %d k-points and %d processes\n", total_count, mpi_size);
+        printf("[INFO] Computation time [s]: %.8f\n", total_time);
+    }
+    printf("[INFO] At rank %d, number of diffraction intensity: %d\n", mpi_rank, numk);
+    printf("[INFO] At rank %d, range of diffraction intensity: %.8f %.8f\n", mpi_rank, intensity_min, intensity_max);
+    merge_k_node();
+    if(mpi_rank==0){
+        printf("[INFO] Total number of diffraction intensity: %d\n", numk);
+        printf("[INFO] Total range of diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        unique_diffraction_intensity();
+        filter_diffraction_intensity(threshold);
+        printf("[INFO] Total number of unique and filtered diffraction intensity: %d\n", numk);
+        printf("[INFO] Total range of unique and filtered diffraction intensity: %.8f %.8f\n", intensity_min, intensity_max);
+        printf("[INFO] Ending computation of %s diffraction\n", model->radiation);
+    }
 }
 
 XRD::~XRD()
 {
-    XRD_KNODE *cur=khead;
-    while(cur!=nullptr){
-        XRD_KNODE *temp=cur;
-        cur=cur->next;
-        delete temp;
-    }
+    free_k_node();
 }
 
 void XRD::add_k_node(int hkl[3], double theta, double intensity, int multiplicity)
@@ -84,53 +144,58 @@ void XRD::add_k_node(int hkl[3], double theta, double intensity, int multiplicit
     if(intensity>intensity_max) intensity_max=intensity;
 }
 
-void XRD::compute_diffraction_intensity(MODEL *model, double spacing[3], bool is_spacing_auto)
+void XRD::merge_k_node()
 {
-    double Kmagnitude_min=2.0/model->lambda*sin(minTheta);
-    double Kmagnitude_max=2.0/model->lambda*sin(maxTheta);
-    double spacingK[3];
-    if(is_spacing_auto){
-        model->compute_reciprocal_spacing(spacingK, spacing);
-    }else{
-        vector_copy(spacingK, spacing);
+    struct NODE{int h,k,l; double theta,intensity; int multiplicity;};
+    MPI_Datatype MPI_NODE;
+    int blocklengths[3] = {3, 2, 1};
+    MPI_Aint offsets[3] = {offsetof(NODE, h), offsetof(NODE, theta), offsetof(NODE, multiplicity)};
+    MPI_Datatype types[3] = {MPI_INT, MPI_DOUBLE, MPI_INT};
+    MPI_Type_create_struct(3, blocklengths, offsets, types, &MPI_NODE);
+    MPI_Type_commit(&MPI_NODE);
+
+    int numk_all=0;
+    MPI_Reduce(&numk, &numk_all, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    std::vector<int> numks(mpi_size);
+    MPI_Gather(&numk,1,MPI_INT,numks.data(),1,MPI_INT,0,MPI_COMM_WORLD);
+    std::vector<NODE> vec;
+    XRD_KNODE *ktemp=khead;
+    while(ktemp){
+        vec.push_back({ktemp->hkl[0],ktemp->hkl[1],ktemp->hkl[2],ktemp->theta,ktemp->intensity,ktemp->multiplicity});
+        ktemp=ktemp->next;
     }
-    printf("[INFO] Range along a*, b*, or c* in reciprocal space [Angstrom-1]: %.8f %.8f\n", Kmagnitude_min, Kmagnitude_max);
-    printf("[INFO] Spacings along a*, b*, and c* in reciprocal space [Angstrom-1]: %.8f %.8f %.8f\n", spacingK[0], spacingK[1], spacingK[2]);
-    int kmin[3], kmax[3];
-    for(int i=0;i<3;i++){
-        kmin[i]=floor(Kmagnitude_min/spacingK[i]); 
-        kmax[i]=ceil(Kmagnitude_max/spacingK[i]);
-    }
-    int num=(2*kmax[0]+1)*(2*kmax[1]+1)*(2*kmax[2]+1);
-    printf("[INFO] Starting computation of diffraction intensity...\n");
-    clock_t start, finish;
-    start=clock();
-    int count=0;
-    for(int ih=-kmax[0];ih<=kmax[0];++ih){
-        for(int ik=-kmax[1];ik<=kmax[1];++ik){
-            for(int il=-kmax[2];il<=kmax[2];++il){
-                if(0==ih&&0==ik&&0==il) continue;
-                double K[3]={double(ih)*spacingK[0], double(ik)*spacingK[1], double(il)*spacingK[2]};
-                double Kmag=model->get_reciprocal_vector_length(K);
-                if(Kmag<=Kmagnitude_max&&Kmag>=Kmagnitude_min){
-                    model->reciprocal_to_cartesian(K, K);
-                    int    hkl[3]={ih, ik, il};
-                    double theta=asin(0.5*model->lambda*Kmag);
-                    double intensity=model->get_diffraction_intensity(theta, K);
-                    if(intensity>XRD_INTENSITY_LIMIT){
-                        add_k_node(hkl, theta, intensity, 1);
-                    }
-                }
-                count++;
-                if(0==count%1000){
-                    printf("[INFO] Completed diffraction intensity %d of %d\n", count, num);
-                }
-            }
+
+    std::vector<int> disps(mpi_size);
+    std::vector<NODE> vec_all;
+    if(mpi_rank==0){
+        vec_all.resize(numk_all);
+        disps[0]=0;
+        for(int i=1; i<mpi_size; ++i){
+            disps[i]=disps[i-1]+numks[i-1];
         }
     }
-    finish=clock();
-    printf("[INFO] Ending computation of diffraction intensity\n");
-    printf("[INFO] Computation time [s]: %.8f\n", double(finish-start)/CLOCKS_PER_SEC);
+    MPI_Gatherv(vec.data(), numk, MPI_NODE, vec_all.data(), numks.data(), disps.data(), MPI_NODE, 0, MPI_COMM_WORLD);
+    free_k_node();
+    
+    if(mpi_rank==0){
+        for(auto &vec : vec_all){
+            int hkl[3]={vec.h,vec.k,vec.l};
+            add_k_node(hkl, vec.theta, vec.intensity, vec.multiplicity);
+        }
+    }
+    MPI_Type_free(&MPI_NODE);
+}
+
+void XRD::free_k_node()
+{
+    XRD_KNODE *cur=khead;
+    while(cur!=nullptr){
+        XRD_KNODE *temp=cur;
+        cur=cur->next;
+        delete temp;
+    }
+    numk=0;
+    khead=ktail=nullptr;
 }
 
 void XRD::filter_diffraction_intensity(double threshold)
@@ -226,12 +291,13 @@ void XRD::img(char *png_path, double *x, double *y, int num, double xmin, double
 
 void XRD::xrd(char *xrd_path)
 {
-    FILE *fp=fopen(xrd_path,"w");
-    fprintf(fp,"# N_1\tN_2\tN_3\tmultiplicity\t2theta\tintensity\tintensity_norm (%d points)\n", numk);
+    if(mpi_rank!=0) return;
     XRD_KNODE *ktemp=khead;
     double constn=100.0/intensity_max;
     double *theta=nullptr, *intensity=nullptr;
     callocate(&theta, numk, 0.0); callocate(&intensity, numk, 0.0);
+    FILE *fp=fopen(xrd_path,"w");
+    fprintf(fp,"# N_1\tN_2\tN_3\tmultiplicity\t2theta\tintensity\tintensity_norm (%d points)\n", numk);
     for(int i=0;i<numk&&ktemp!=nullptr;i++){
         theta[i]=ktemp->theta*RAD_TO_DEG_TWO;
         intensity[i]=ktemp->intensity*constn;
@@ -252,6 +318,7 @@ void XRD::xrd(char *xrd_path)
 
 void XRD::xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta)
 {
+    if(mpi_rank!=0) return;
     double tbin=bin2Theta*DEG_TO_RAD_HALF;
     int    nbin=round((maxTheta-minTheta)/tbin);
     double *theta=nullptr, *intensity=nullptr;
@@ -307,6 +374,7 @@ void XRD::xrd(char *xrd_path, double mixing_param, double scherrer_lambda, doubl
 
 void XRD::xrd(char *xrd_path, double mixing_param, double FWHM, double bin2Theta)
 {
+    if(mpi_rank!=0) return;
     double tbin=bin2Theta*DEG_TO_RAD_HALF;
     int    nbin=round((maxTheta-minTheta)/tbin);
     double *theta=nullptr, *intensity=nullptr;
