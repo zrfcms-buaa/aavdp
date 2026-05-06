@@ -933,12 +933,18 @@ MODEL::MODEL(const char *model_path, const char types[][10], const double DWs[])
     ntype=QB.TypeNumber;
     natom=QB.TotalNumber;
     mallocate_2d(&atom_pos, natom, 3);
+    mallocate_2d(&atom_fpos, natom, 3);
     mallocate(&atom_type, natom);
     mallocate(&atom_DW, natom);
+    double i_mat[3][3];
+    matrix_inverse(i_mat, QB.mat);
     for(int i=0;i<natom;i++){
         atom_pos[i][0]=QB.atom[i].x; 
         atom_pos[i][1]=QB.atom[i].y; 
         atom_pos[i][2]=QB.atom[i].z;
+        atom_fpos[i][0]=i_mat[0][0]*QB.atom[i].x+i_mat[0][1]*QB.atom[i].y+i_mat[0][2]*QB.atom[i].z;
+        atom_fpos[i][1]=i_mat[1][0]*QB.atom[i].x+i_mat[1][1]*QB.atom[i].y+i_mat[1][2]*QB.atom[i].z;
+        atom_fpos[i][2]=i_mat[2][0]*QB.atom[i].x+i_mat[2][1]*QB.atom[i].y+i_mat[2][2]*QB.atom[i].z;
         atom_type[i]=QB.atom[i].type;
         atom_DW[i]=DWs[atom_type[i]-1];
     }
@@ -999,10 +1005,54 @@ void MODEL::set_lattice(double mat[3][3])
     }
 }
 
+// void CELL::compute_reflection_range(double dmin)
+// {
+//     for(int i=0;i<3;i++){
+//         double dhkl;
+//         double hkl[3]={0.0, 0.0, 0.0};
+//         HKL[i]=0;
+//         do{
+//             HKL[i]++;
+//             hkl[i]=double(HKL[i]);
+//             dhkl=get_interplanar_spacing(hkl);
+//         }while(dhkl>=dmin);
+//     }
+// }
+
+// double CELL::get_interplanar_spacing(double g[3])
+// {
+//     double dotgg=dot(g, g, 'r');
+//     if(dotgg<=0.0){
+//         printf("[ERROR] Zero reciprocal vector in interplanar spacing compution.");
+//         exit(1);
+//     }
+//     return 1.0/sqrt(dotgg);
+// }
+
+// double CELL::dot(double v1[3], double v2[3], char space)
+// {
+//     double temp[3], res;
+//     switch(space)
+//     {
+//     case 'r':
+//         vector_rotate(temp, rmt, v2);
+//         res=vector_dot(v1, temp);
+//         break;
+//     case 'd':
+//         vector_rotate(temp, dmt, v2);
+//         res=vector_dot(v1, temp);
+//     default:
+//         printf("[ERROR] Unrecognized space %c in dot computation.", space);
+//         exit(1);
+//     }
+//     return res;
+// }
+
 MODEL::~MODEL()
 {
     if(natom>0){
         deallocate_2d(atom_pos, natom);
+        deallocate_2d(atom_fpos, natom);
         deallocate(atom_type);
         deallocate(atom_DW);
         deallocate(atom_Z);
@@ -1078,19 +1128,8 @@ XMODEL::XMODEL(const char *model_path, const char types[][10], const double DWs[
             strcpy(type_name[i], types[i]);
         }
     }
-    for(int i=0;i<ntype;i++){
-        int j;
-        for(j=0;j<X_TYPE_NUMBER;j++){
-            if(0==strcmp(type_name[i], X_TYPE[j])){
-                type_index[i]=j;
-                break;
-            }
-        }
-        if(j==X_TYPE_NUMBER){
-            printf("[ERROR] Unrecognized type %s for x-ray diffraction", type_name[i]);
-            exit(1);
-        }
-    }
+    update_atomicSF_type(atomicSF_type);
+    update_lorentzP_type(lorentzP_type);
 }
 
 XMODEL::~XMODEL()
@@ -1103,61 +1142,178 @@ double XMODEL::get_Debye_Waller_factor(double S, double DW)
     return exp(-DW*S*S);//S, scattering vector
 }
 
-double XMODEL::get_atomic_scattering_factor(double S, const double A[4], const double B[4], const double C)//xrd
+double XMODEL::get_lorentz_polarization_factor_0(double theta)
 {
-    double res=0.0;
-    for(int i=0;i<4;i++){
-        res+=A[i]*exp(-B[i]*S*S);//S, scattering vector
-    }
-    res+=C;
-    return res;
+    return 1;
 }
 
-complex<double> XMODEL::get_atomic_structure_factor(double theta, double g[3])
+double XMODEL::get_lorentz_polarization_factor_1(double theta)
+{
+    return (1+cos(2*theta)*cos(2*theta))/2;
+}
+
+double XMODEL::get_lorentz_polarization_factor_2(double theta)
+{
+    return (1+cos(2*theta)*cos(2*theta))/2/sin(2*theta);
+}
+
+double XMODEL::get_lorentz_polarization_factor_3(double theta)
+{
+    return (1+cos(2*theta)*cos(2*theta))/(sin(theta)*sin(theta)*cos(theta));
+}
+
+complex<double> XMODEL::get_atomic_scattering_factor_in_lammps(double S, double params[9])//xrd
+{
+    double res=0.0;
+    double S2=S*S;
+    for(int i=0;i<4;i++){
+        res+=params[i]*exp(-params[i+4]*S2);//S, scattering vector
+    }
+    res+=params[8];
+    return complex<double>(res, 0.0);
+}
+
+complex<double> XMODEL::get_atomic_scattering_factor_in_vesta(double S, double params[14])//xrd
+{
+    double res_real=0.0, res_imag=0.0;
+    double S2=S*S;
+    for(int i=0;i<5;i++){
+        res_real+=params[i]*exp(-params[i+5]*S2);//S, scattering vector
+    }
+    res_real+=params[10]+params[11]+params[13];
+    res_imag+=params[12];
+    return complex<double>(res_real, res_imag);
+}
+
+complex<double> XMODEL::get_atomic_structure_factor_in_lammps(double theta, double g[3])
 {
     complex<double> res(0.0, 0.0);
     double S=sin(theta)/lambda;
     for(int i=0;i<natom;++i){
-        int    t=type_index[atom_type[i]-1];
-        const double *A=X_A[t], *B=X_B[t], C=X_C[t];
+        double *params=type_params[atom_type[i]-1];
         double q=TWO_PI*(g[0]*atom_pos[i][0]+g[1]*atom_pos[i][1]+g[2]*atom_pos[i][2]);
-        res+=get_Debye_Waller_factor(S, atom_DW[i])*get_atomic_scattering_factor(S, A, B, C)*complex<double>(cos(q), sin(q));
+        res+=get_Debye_Waller_factor(S, atom_DW[i])*get_atomic_scattering_factor_in_lammps(S, params)*complex<double>(cos(q), sin(q));
     }
     return res;
+}
+
+complex<double> XMODEL::get_atomic_structure_factor_in_vesta(double theta, double g[3])
+{
+    complex<double> res(0.0, 0.0);
+    double S=sin(theta)/lambda;
+    for(int i=0;i<natom;++i){
+        double *params=type_params[atom_type[i]-1];
+        double q=TWO_PI*(g[0]*atom_pos[i][0]+g[1]*atom_pos[i][1]+g[2]*atom_pos[i][2]);
+        res+=get_Debye_Waller_factor(S, atom_DW[i])*get_atomic_scattering_factor_in_vesta(S, params)*complex<double>(cos(q), sin(q));
+    }
+    return res;
+}
+
+void XMODEL::update_atomicSF_type(int asf_type)
+{
+    atomicSF_type=asf_type;
+    int x_type_number=0;
+    const char (*x_type)[10];
+    switch(asf_type)
+    {
+    case 1:
+        x_type_number=X_TYPE_NUMBER;
+        x_type=X_TYPE;
+        break;
+    case 2:
+        x_type_number=XV_TYPE_NUMBER;
+        x_type=XV_TYPE;
+        break;
+    default:
+        printf("[ERROR] Unrecognized type %d of atomic scattering factor", asf_type);
+        exit(1);
+    }
+    for(int i=0;i<ntype;i++){
+        int j;
+        for(j=0;j<x_type_number;j++){
+            if(0==strcmp(type_name[i], x_type[j])){
+                type_index[i]=j;
+                break;
+            }
+        }
+        if(j==x_type_number){
+            printf("[ERROR] Unrecognized type %s for x-ray diffraction", type_name[i]);
+            exit(1);
+        }
+    }
+    switch(asf_type)
+    {
+    case 1:
+        param_num=9;
+        callocate_2d(&type_params, ntype, param_num, 0.0);
+        for(int i=0;i<ntype;i++){
+            int t=type_index[i];
+            for(int j=0;j<4;j++){
+                type_params[i][j]=X_A[t][j];
+                type_params[i][j+4]=X_B[t][j];
+            }
+            type_params[i][8]=X_C[t];
+        }
+        asf_kernel=&XMODEL::get_atomic_structure_factor_in_lammps;
+        break;
+    case 2:
+        param_num=14;
+        callocate_2d(&type_params, ntype, param_num, 0.0);
+        for(int i=0;i<ntype;i++){
+            int t=type_index[i];
+            for(int j=0;j<5;j++){
+                type_params[i][j]=XV_A[t][j];
+                type_params[i][j+5]=XV_B[t][j];
+            }
+            type_params[i][10]=XV_C[t];
+            type_params[i][11]=XV_fp[t];
+            type_params[i][12]=XV_fpp[t];
+            type_params[i][13]=XV_fNT[t];
+        }
+        asf_kernel=&XMODEL::get_atomic_structure_factor_in_vesta;
+        break;
+    default:
+        printf("[ERROR] Unrecognized type %d of atomic scattering factor", asf_type);
+        exit(1);
+    }
 }
 
 void XMODEL::update_lorentzP_type(int lp_type)
 {
     lorentzP_type=lp_type;
+    switch(lp_type)
+    {
+    case 0:
+        lp_kernel=&XMODEL::get_lorentz_polarization_factor_0;
+        break;
+    case 1:
+        lp_kernel=&XMODEL::get_lorentz_polarization_factor_1;
+        break;
+    case 2:
+        lp_kernel=&XMODEL::get_lorentz_polarization_factor_2;
+        break;
+    case 3:
+        lp_kernel=&XMODEL::get_lorentz_polarization_factor_3;
+        break;
+    default:
+        printf("[ERROR] Unrecognized type %d of lorentz polarization factor", lp_type);
+        exit(1);
+    }
 }
 
 double XMODEL::get_diffraction_intensity(double theta, double g[3])
 {
-    complex<double> F=get_atomic_structure_factor(theta, g);
+    complex<double> F(0.0, 0.0);
+    F=(this->*asf_kernel)(theta, g);
     double res=(F.real()*F.real()+F.imag()*F.imag())/natom;
-    switch(lorentzP_type)
-    {
-    case 0:
-        break;
-    case 1:
-        res*=((1+cos(2*theta)*cos(2*theta))/2);
-        break;
-    case 2:
-        res*=((1+cos(2*theta)*cos(2*theta))/2/sin(2*theta));
-        break;
-    case 3:
-        res*=((1+cos(2*theta)*cos(2*theta))/(sin(theta)*sin(theta)*cos(theta)));
-        break;
-    default:
-        printf("[ERROR] Unrecognized type %d of lorentz polarization factor", lorentzP_type);
-        exit(1);
-    }
+    res*=(this->*lp_kernel)(theta);
     return res;
 }
 
 double XMODEL::get_diffraction_intensity(double G, double g[3], bool is_zero)
 {
-    return -1.0;
+    double theta=asin(0.5*lambda*G);
+    return get_diffraction_intensity(theta, g);
 }
 
 NMODEL::NMODEL(const char *model_path, const char types[][10], const double DWs[], double mlambda):MODEL(model_path, types, DWs)
@@ -1234,7 +1390,8 @@ double NMODEL::get_diffraction_intensity(double theta, double g[3])
 
 double NMODEL::get_diffraction_intensity(double G, double g[3], bool is_zero)
 {
-    return -1.0;
+    double theta=asin(0.5*lambda*G);
+    return get_diffraction_intensity(theta, g);
 }
 
 EMODEL::EMODEL(const char *model_path, const char types[][10], const double DWs[], double mlambda):MODEL(model_path, types, DWs)

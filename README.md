@@ -35,12 +35,12 @@ where --mode specifies the diffraction/analysis mode, such as --xrd, --ned, --ke
 For each diffraction mode, the -o option and its corresponding value, outputfile, are required and set to default, e.g., ./AAVDP.xrd, which will export diffraction data along with an automatic preview of the diffraction pattern, e.g., ./AAVDP.xrd.png. The command syntaxes for various functionalities of AAVDP are listed below:
 
 1.  For XRD analysis, the command syntax is shown below:
->>AAVDP --xrd [inputfile] -l [wavelength] -o [outputfile] ... -scherrer -scherrer_d [grain_diameter] ...
-where --xrd simulates the diffraction of incident X-rays with a wavelength of λ interacting with the input model; -scherrer activates a further simulation of the smearing of diffraction peaks caused by crystalline grains with a diameter of d.
+>>AAVDP --xrd [inputfile] -l [wavelength] -o [outputfile] ... -pseudo -pseudo_uvw [uvw_parameter] ...
+where --xrd simulates the diffraction of incident X-rays with a wavelength of λ interacting with the input model; -pseudo activates a further simulation of the smearing of diffraction peaks.
 
 2.  For NED analysis, the command syntax is shown below:
->> AAVDP --ned [inputfile] -l [wavelength] -o [outputfile] ... -scherrer -scherrer_d [grain_diameter] ...
-where --ned simulates the diffraction of incident neutrons with a de Broglie wavelength of λ interacting with the input model; -scherrer performs the same operation as in the --xrd command.
+>> AAVDP --ned [inputfile] -l [wavelength] -o [outputfile] ... -pseudo -pseudo_uvw [uvw_parameter] ...
+where --ned simulates the diffraction of incident neutrons with a de Broglie wavelength of λ interacting with the input model; -pseudo performs the same operation as in the --xrd command.
 
 3.  For KED analysis, the command syntax is shown below:
 >>AAVDP --ked [inputfile] -en [acceleration_voltage] -z [z1] [z2] [z3] -o [outputfile] -gauss -gauss_sig [standard_deviation] ...

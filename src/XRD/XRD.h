@@ -12,14 +12,12 @@
 #include "../MATH/GRAPH.h"
 #include "../MODEL/MODEL.h"
 
-#define DEG_TO_RAD_HALF 0.008726646259971648
-#define RAD_TO_DEG_TWO 114.59155902616465
 #define XRD_INTENSITY_LIMIT 1.0e-6
-#define XRD_THETA_LIMIT 1.0e-3
 struct XRD_KNODE{
     int    hkl[3];
     double theta;//radian
     double intensity;
+    double deviation;
     int    multiplicity;
     XRD_KNODE *next=nullptr;
 };
@@ -41,17 +39,19 @@ public:
     XRD_KNODE  *ktail=nullptr;
     double minTheta, maxTheta;
     double intensity_min=1.0e8, intensity_max=0.0;
-    XRD(MODEL *model, double min2Theta, double max2Theta, double threshold, double spacing[3], bool is_spacing_auto);
+    XRD(MODEL *model, double min2Theta, double max2Theta, double bin2Theta, double threshold, double spacing[3], bool is_spacing_auto);
     ~XRD();
     void   xrd(char *xrd_path);
-    void   xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta);
-    void   xrd(char *xrd_path, double mixing_param, double FWHM, double bin2Theta);
+    void   xrd(char *xrd_path, double NA, double NB, double U, double V, double W, double bin2Theta);
+    // void   xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta);
+    // void   xrd(char *xrd_path, double mixing_param, double FWHM, double bin2Theta);
 private:
-    void   add_k_node(int hkl[3], double theta, double intensity, int multiplicity);
+    void   add_k_node(int hkl[3], double theta, double intensity, double deviation, int multiplicity);
     void   merge_k_node();
     void   free_k_node();
     void   filter_diffraction_intensity(double threshold);
-    void   unique_diffraction_intensity();
+    // void   unique_diffraction_intensity();
+    void   histogram_diffraction_intensity(double bin2Theta);
     void   img(char *png_path, double *x, double *y, int num, double xmin, double xmax, char mode);
 };
 

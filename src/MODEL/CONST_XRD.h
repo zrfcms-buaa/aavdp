@@ -476,4 +476,32 @@ const double X_C[X_TYPE_NUMBER]={
 13.2674
 };
 
+#define XV_TYPE_NUMBER 2
+const char XV_TYPE[XV_TYPE_NUMBER][10]={
+"Li", "Zn"
+};
+const double XV_A[XV_TYPE_NUMBER][5]={
+{0.974637, 0.158472, 0.811855, 0.262416, 0.790108},
+{14.741002, 6.907748, 4.642337, 2.191766, 38.424042},
+};
+const double XV_B[XV_TYPE_NUMBER][5]={
+{4.334946, 0.342451, 97.102966, 201.363824, 1.409234},
+{3.388232, 0.243315, 11.903689, 63.312130, 0.000397},
+};
+const double XV_C[XV_TYPE_NUMBER]={
+0.002542,
+-36.915828
+};
+const double XV_fp[XV_TYPE_NUMBER]={
+8.06808E-04,
+-1.55007E+00
+};
+const double XV_fpp[XV_TYPE_NUMBER]={
+3.35121E-04,
+6.73799E-01
+};
+const double XV_fNT[XV_TYPE_NUMBER]={
+-7.11310E-04,
+-7.55160E-03
+};
 #endif

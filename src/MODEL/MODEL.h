@@ -152,11 +152,14 @@ private:
     void   compute_atomic_density();
 };
 
+#define DEG_TO_RAD_HALF 0.008726646259971648
+#define RAD_TO_DEG_TWO 114.59155902616465
 class MODEL
 {
 public:
     int    natom=0;
     double **atom_pos=nullptr;
+    double **atom_fpos=nullptr;
     int    *atom_type=nullptr;
     double *atom_DW=nullptr;
     int    *atom_Z=nullptr;
@@ -192,14 +195,28 @@ class XMODEL:public MODEL
 public:
     XMODEL(const char *model_path, const char types[][10], const double DWs[], double mlambda);
     ~XMODEL();
+    void   update_atomicSF_type(int asf_type);
     void   update_lorentzP_type(int lp_type);
     double get_diffraction_intensity(double theta, double g[3]);
     double get_diffraction_intensity(double G, double g[3], bool is_zero);
 private:
+    int    atomicSF_type=1;
     int    lorentzP_type=3;
+    double **type_params=nullptr;
+    int    param_num=0;
+    using  ASF_FUNC=complex<double> (XMODEL::*)(double, double[3]);
+    using  LP_FUNC=double (XMODEL::*)(double);
+    ASF_FUNC asf_kernel;
+    LP_FUNC lp_kernel;
     double get_Debye_Waller_factor(double S, double DW);
-    double get_atomic_scattering_factor(double S, const double A[4], const double B[4], const double C);
-    complex<double> get_atomic_structure_factor(double theta, double g[3]);
+    double get_lorentz_polarization_factor_0(double theta);
+    double get_lorentz_polarization_factor_1(double theta);
+    double get_lorentz_polarization_factor_2(double theta);
+    double get_lorentz_polarization_factor_3(double theta);
+    complex<double> get_atomic_scattering_factor_in_lammps(double S, double params[9]);
+    complex<double> get_atomic_scattering_factor_in_vesta(double S, double params[14]);
+    complex<double> get_atomic_structure_factor_in_lammps(double theta, double g[3]);
+    complex<double> get_atomic_structure_factor_in_vesta(double theta, double g[3]);
 };
 
 class NMODEL:public MODEL

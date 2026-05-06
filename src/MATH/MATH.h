@@ -155,6 +155,8 @@ extern void matrix_transpose(T t_mat[3][3], T mat[3][3]);
 template <typename T>
 extern void matrix_multiply(T mat[3][3], T mat1[3][3], T mat2[3][3]);
 template <typename T>
+extern void matrix_inverse(T i_mat[3][3], T mat[3][3]);
+template <typename T>
 void matrix_copy(T c_mat[3][3], T mat[3][3])
 {
     for(int i=0;i<3;i++){
@@ -194,6 +196,31 @@ void matrix_multiply(T mat[3][3], T mat1[3][3], T mat2[3][3])
             }
         }
     }
+}
+
+template <typename T>
+void matrix_inverse(T i_mat[3][3], T mat[3][3])
+{
+    double det=
+        mat[0][0]*(mat[1][1]*mat[2][2]-mat[1][2]*mat[2][1])-
+        mat[0][1]*(mat[1][0]*mat[2][2]-mat[1][2]*mat[2][0])+
+        mat[0][2]*(mat[1][0]*mat[2][1]-mat[1][1]*mat[2][0]);
+
+    if(fabs(det)<1e-12){
+        printf("[ERROR] Matrix is singular!");
+        exit(1);
+    }
+
+    double invdet=1.0/det;
+    i_mat[0][0]= (mat[1][1]*mat[2][2]-mat[1][2]*mat[2][1])*invdet;
+    i_mat[0][1]=-(mat[0][1]*mat[2][2]-mat[0][2]*mat[2][1])*invdet;
+    i_mat[0][2]= (mat[0][1]*mat[1][2]-mat[0][2]*mat[1][1])*invdet;
+    i_mat[1][0]=-(mat[1][0]*mat[2][2]-mat[1][2]*mat[2][0])*invdet;
+    i_mat[1][1]= (mat[0][0]*mat[2][2]-mat[0][2]*mat[2][0])*invdet;
+    i_mat[1][2]=-(mat[0][0]*mat[1][2]-mat[0][2]*mat[1][0])*invdet;
+    i_mat[2][0]= (mat[1][0]*mat[2][1]-mat[1][1]*mat[2][0])*invdet;
+    i_mat[2][1]=-(mat[0][0]*mat[2][1]-mat[0][1]*mat[2][0])*invdet;
+    i_mat[2][2]= (mat[0][0]*mat[1][1]-mat[0][1]*mat[1][0])*invdet;
 }
 
 template <typename T>

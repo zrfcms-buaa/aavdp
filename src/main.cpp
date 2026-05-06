@@ -33,17 +33,19 @@ int main(int argc, char* argv[])
         double lambda=1.54184;
         double min2Theta=0.0;
         double max2Theta=90.0;
+        double bin2Theta=0.01;
+        int    asf_type=1;
         int    lp_type=3;
         if(0==strcmp(mode, "ned")) lp_type=2;
         double c[3]={1.0, 1.0, 1.0};
         bool   is_spacing_auto=true;
         bool   is_c_default=true;
-        double threshold=0.001;
+        double threshold=0.0;
 
-        double mixing_param=0.0;
-        double grain_diameter=500.0;
+        double NA=0.5, NB=0.0;
+        double U=0.01, V=-0.001, W=0.002;
         double d2t=0.01;
-        bool   is_scherrer=false;
+        bool   is_pseudo=false;
         while(i<argc){
             if(0==strcmp(argv[i], "-e")){
                 i++;
@@ -67,6 +69,14 @@ int main(int argc, char* argv[])
                 i++;
                 min2Theta=be_double(argv[i++]);
                 max2Theta=be_double(argv[i++]);
+                continue;
+            }else if(0==strcmp(argv[i], "-d2t")){
+                i++;
+                bin2Theta=be_double(argv[i++]);
+                continue;
+            }else if(0==strcmp(argv[i], "-asf")){
+                i++;
+                asf_type=int(be_double(argv[i++]));
                 continue;
             }else if(0==strcmp(argv[i], "-lp")){
                 i++;
@@ -97,23 +107,29 @@ int main(int argc, char* argv[])
                 i++;
                 strcpy(output_path, argv[i++]);
                 continue;
-            }else if(0==strcmp(argv[i], "-scherrer")){
+            }else if(0==strcmp(argv[i], "-pseudo")){
                 i++;
-                is_scherrer=true;
+                is_pseudo=true;
                 while(i<argc){
-                    if(0==strcmp(argv[i], "-scherrer_m")){
+                    if(0==strcmp(argv[i], "-pseudo_na")){
                         i++;
-                        mixing_param=be_double(argv[i++]);
+                        NA=be_double(argv[i++]);
                         continue;
-                    }else if(0==strcmp(argv[i], "-scherrer_d")){
+                    }else if(0==strcmp(argv[i], "-pseudo_nb")){
                         i++;
-                        grain_diameter=be_double(argv[i++]);
+                        NB=be_double(argv[i++]);
                         continue;
-                    }else if(0==strcmp(argv[i], "-scherrer_d2t")){
+                    }else if(0==strcmp(argv[i], "-pseudo_uvw")){
+                        i++;
+                        U=be_double(argv[i++]);
+                        V=be_double(argv[i++]);
+                        W=be_double(argv[i++]);
+                        continue;
+                    }else if(0==strcmp(argv[i], "-pseudo_d2t")){
                         i++;
                         d2t=be_double(argv[i++]);
                         continue;
-                    }else if(not_in_switch(argv[i], "-scherrer")){
+                    }else if(not_in_switch(argv[i], "-pseudo_voigt")){
                         break;
                     }else{
                         printf("AAVDP: unrecognized option '%s'\n", argv[i]);
@@ -135,19 +151,20 @@ int main(int argc, char* argv[])
         }
         if(0==strcmp(mode, "xrd")){
             XMODEL model(input_path, types, DWs, lambda);
+            model.update_atomicSF_type(asf_type);
             model.update_lorentzP_type(lp_type);
-            XRD xrd(&model, min2Theta, max2Theta, threshold, c, is_spacing_auto);
-            if(is_scherrer){
-                xrd.xrd(xrd_path, mixing_param, lambda, grain_diameter, d2t);
+            XRD xrd(&model, min2Theta, max2Theta, bin2Theta, threshold, c, is_spacing_auto);
+            if(is_pseudo){
+                xrd.xrd(xrd_path, NA, NB, U, V, W, d2t);
             }else{
                 xrd.xrd(xrd_path);
             }
         }else{
             NMODEL model(input_path, types, DWs, lambda);
             model.update_lorentzP_type(lp_type);
-            XRD xrd(&model, min2Theta, max2Theta, threshold, c, is_spacing_auto);
-            if(is_scherrer){
-                xrd.xrd(xrd_path, mixing_param, lambda, grain_diameter, d2t);
+            XRD xrd(&model, min2Theta, max2Theta, bin2Theta, threshold, c, is_spacing_auto);
+            if(is_pseudo){
+                xrd.xrd(xrd_path, NA, NB, U, V, W, d2t);
             }else{
                 xrd.xrd(xrd_path);
             } 
