@@ -276,8 +276,8 @@ void XRD::histogram_diffraction_intensity(double bin2Theta)
     while(kfast!=nullptr){
         int fast_index=int((kfast->theta-minTheta)/bin);
         int slow_index=int((kslow->theta-minTheta)/bin);
+        kslow->theta=minTheta+double(slow_index)*bin;
         if(fast_index!=slow_index){
-            kslow->theta=minTheta+double(slow_index)*bin;
             double average=kslow->intensity/double(kslow->multiplicity);
             kslow->deviation=kslow->deviation/double(kslow->multiplicity)-average*average;
 
@@ -425,61 +425,60 @@ void XRD::xrd(char *xrd_path, double NA, double NB, double U, double V, double W
     printf("[INFO] Image for diffraction pattern stored in %s\n", png_path);
 }
 
-// void XRD::xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta)
-// {
-//     if(mpi_rank!=0) return;
-//     double tbin=bin2Theta*DEG_TO_RAD_HALF;
-//     int    nbin=round((maxTheta-minTheta)/tbin);
-//     double *theta=nullptr, *intensity=nullptr;
-//     callocate(&theta, nbin, 0.0);
-//     callocate(&intensity, nbin, 0.0);
-//     for(int i=0;i<nbin;i++){
-//         theta[i]=(minTheta+tbin*(i+0.5));
-//     }
-//     double constw=SCHERRER_CONST*scherrer_lambda/scherrer_diameter;
-//     double *intensity_c=nullptr; 
-//     callocate(&intensity_c, nbin, 0.0);
-//     XRD_KNODE *ktemp=khead;
-//     for(int i=0;i<numk&&ktemp!=nullptr;i++){
-//         int j=int((ktemp->theta-minTheta)/tbin);
-//         double FWHM=constw/cos(theta[j]);
-//         pseudo_Voigt(intensity_c, theta, nbin, theta[j], ktemp->intensity, mixing_param, FWHM);
-//         for(int k=0;k<nbin;k++){
-//             intensity[k]+=intensity_c[k];
-//             intensity_c[k]=0.0;
-//         }
-//         ktemp=ktemp->next;
-//     }
-//     deallocate(intensity_c);
-//     double imax=0.0, imin=1.0e8;
-//     for(int i=0;i<nbin;i++){
-//         if(imax<intensity[i]) imax=intensity[i];
-//         if(imin>intensity[i]) imin=intensity[i];
-//     }
-//     printf("[INFO] Number of profiled diffraction intensity: %d\n", nbin);
-//     printf("[INFO] Range of profiled diffraction intensity: %.8f %.8f\n", imin, imax);
+void XRD::xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta)
+{
+    if(mpi_rank!=0) return;
+    double tbin=bin2Theta*DEG_TO_RAD_HALF;
+    int    nbin=round((maxTheta-minTheta)/tbin)+1;
+    double *theta=nullptr, *intensity=nullptr;
+    callocate(&theta, nbin, 0.0);
+    callocate(&intensity, nbin, 0.0);
+    for(int i=0;i<nbin;i++){
+        theta[i]=(minTheta+tbin*double(i));
+    }
+    double constw=SCHERRER_CONST*scherrer_lambda/scherrer_diameter;
+    double *intensity_c=nullptr; 
+    callocate(&intensity_c, nbin, 0.0);
+    XRD_KNODE *ktemp=khead;
+    for(int i=0;i<numk&&ktemp!=nullptr;i++){
+        double FWHM=constw/cos(ktemp->theta);
+        pseudo_Voigt(intensity_c, theta, nbin, ktemp->theta, ktemp->intensity, mixing_param, FWHM);
+        for(int k=0;k<nbin;k++){
+            intensity[k]+=intensity_c[k];
+            intensity_c[k]=0.0;
+        }
+        ktemp=ktemp->next;
+    }
+    deallocate(intensity_c);
+    double imax=0.0, imin=1.0e8;
+    for(int i=0;i<nbin;i++){
+        if(imax<intensity[i]) imax=intensity[i];
+        if(imin>intensity[i]) imin=intensity[i];
+    }
+    printf("[INFO] Number of profiled diffraction intensity: %d\n", nbin);
+    printf("[INFO] Range of profiled diffraction intensity: %.8f %.8f\n", imin, imax);
 
-//     FILE *fp=nullptr;
-//     fp=fopen(xrd_path,"w");
-//     fprintf(fp,"# 2theta\tintensity\tintensity_norm (%d bins)\n", nbin);
-//     double constn=100.0/imax;
-//     for(int i=0;i<nbin;i++){
-//         theta[i]*=RAD_TO_DEG_TWO;
-//         fprintf(fp, "%.8f\t%.8f\t", theta[i], intensity[i]);
-//         intensity[i]*=constn;
-//         fprintf(fp, "%.8f\n", intensity[i]);
-//         fflush(fp);
-//     }
-//     fclose(fp);
-//     printf("[INFO] Information for diffraction pattern stored in %s\n", xrd_path);
+    FILE *fp=nullptr;
+    fp=fopen(xrd_path,"w");
+    fprintf(fp,"# 2theta\tintensity\tintensity_norm (%d bins)\n", nbin);
+    double constn=100.0/imax;
+    for(int i=0;i<nbin;i++){
+        theta[i]*=RAD_TO_DEG_TWO;
+        fprintf(fp, "%.8f\t%.8f\t", theta[i], intensity[i]);
+        intensity[i]*=constn;
+        fprintf(fp, "%.8f\n", intensity[i]);
+        fflush(fp);
+    }
+    fclose(fp);
+    printf("[INFO] Information for diffraction pattern stored in %s\n", xrd_path);
 
-//     char png_path[strlen(xrd_path)+5];
-//     strcpy(png_path, xrd_path); strcat(png_path, ".png");
-//     img(png_path, theta, intensity, nbin, minTheta*RAD_TO_DEG_TWO, maxTheta*RAD_TO_DEG_TWO, 'l');
-//     deallocate(theta);
-//     deallocate(intensity);
-//     printf("[INFO] Image for diffraction pattern stored in %s\n", png_path);
-// }
+    char png_path[strlen(xrd_path)+5];
+    strcpy(png_path, xrd_path); strcat(png_path, ".png");
+    img(png_path, theta, intensity, nbin, minTheta*RAD_TO_DEG_TWO, maxTheta*RAD_TO_DEG_TWO, 'l');
+    deallocate(theta);
+    deallocate(intensity);
+    printf("[INFO] Image for diffraction pattern stored in %s\n", png_path);
+}
 
 // void XRD::xrd(char *xrd_path, double mixing_param, double FWHM, double bin2Theta)
 // {

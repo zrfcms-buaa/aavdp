@@ -43,7 +43,7 @@ public:
     ~XRD();
     void   xrd(char *xrd_path);
     void   xrd(char *xrd_path, double NA, double NB, double U, double V, double W, double bin2Theta);
-    // void   xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta);
+    void   xrd(char *xrd_path, double mixing_param, double scherrer_lambda, double scherrer_diameter, double bin2Theta);
     // void   xrd(char *xrd_path, double mixing_param, double FWHM, double bin2Theta);
 private:
     void   add_k_node(int hkl[3], double theta, double intensity, double deviation, int multiplicity);
